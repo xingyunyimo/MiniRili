@@ -1,5 +1,6 @@
 package com.minirili.app.widgets
 
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -9,6 +10,8 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -47,6 +50,15 @@ class CombinedWidgetProvider : AppWidgetProvider() {
                 cycleEvents(context)
                 return
             }
+            ACTION_REFRESH_WEATHER -> {
+                // 后台线程刷新天气，避免阻塞 BroadcastReceiver 主线程
+                Thread {
+                    runCatching { refreshWeather(context) }
+                }.start()
+                // 续约下一次 AlarmManager
+                scheduleWeatherAlarm(context)
+                return
+            }
         }
         super.onReceive(context, intent)
     }
@@ -60,6 +72,9 @@ class CombinedWidgetProvider : AppWidgetProvider() {
                 Log.e(TAG, "static render failed id=$appWidgetId", e)
             }
         }
+        // 启动独立 1 秒时间刷新
+        startTimeTick(appContext)
+        // 后台线程做动态渲染（天气网络请求 + Room 查询）
         Thread {
             for (appWidgetId in appWidgetIds) {
                 try {
@@ -68,6 +83,9 @@ class CombinedWidgetProvider : AppWidgetProvider() {
                     Log.e(TAG, "dynamic render failed id=$appWidgetId", e)
                 }
             }
+            // 动态渲染完成后启动天气 Handler 兜底 + AlarmManager
+            startWeatherHandler(appContext)
+            scheduleWeatherAlarm(appContext)
         }.start()
     }
 
@@ -75,6 +93,13 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         val am = AppWidgetManager.getInstance(context)
         val ids = am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))
         if (ids.isNotEmpty()) onUpdate(context, am, ids)
+    }
+
+    override fun onDisabled(context: Context) {
+        stopTimeTick()
+        stopWeatherHandler()
+        cancelWeatherAlarm(context)
+        cancelEventCycle()
     }
 
     override fun onRestored(context: Context, oldWidgetIds: IntArray, newWidgetIds: IntArray) {
@@ -189,7 +214,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         runCatching { views.setInt(R.id.widget_divider_bottom, "setBackgroundColor", Color.parseColor(scheme.divider)) }
     }
 
-    // ===== 时间模块 =====
+    // ===== 时间模块（全量更新） =====
     private fun setTimeSection(views: RemoteViews, context: Context) {
         val now = Calendar.getInstance()
         val month = now.get(Calendar.MONTH) + 1
@@ -214,6 +239,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    // ===== 时间文本（仅更新时间 HH:mm，轻量） =====
     private fun setTimeText(views: RemoteViews, context: Context) {
         val is24h = prefs(context).getBoolean(PREF_24H, true)
         val now = Calendar.getInstance()
@@ -308,7 +334,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         views.setViewVisibility(R.id.widget_aqi_value, View.GONE)
     }
 
-    // ===== 事件模块（含循环滚动）=====
+    // ===== 事件模块（含循环滚动） =====
     private fun setEventsSection(context: Context, views: RemoteViews) {
         val db = CalendarDatabase.getDatabase(context)
 
@@ -385,55 +411,155 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    // ===== 事件循环滚动（Handler 实现，不受 AlarmManager 限频影响）=====
+    // ===== 事件循环滚动（Handler 实现，5 秒间隔） =====
     private fun scheduleEventCycle(context: Context) {
         cancelEventCycle()
-        val handler = android.os.Handler(context.mainLooper)
+        val handler = Handler(context.mainLooper)
         val runnable = Runnable {
             runCatching { cycleEvents(context) }
         }
-        sCycleHandler = handler
-        sCycleRunnable = runnable
+        sEventCycleHandler = handler
+        sEventCycleRunnable = runnable
         handler.postDelayed(runnable, 5000)
     }
 
     private fun cancelEventCycle() {
-        sCycleRunnable?.let { sCycleHandler?.removeCallbacks(it) }
-        sCycleRunnable = null
-        sCycleHandler = null
+        sEventCycleRunnable?.let { sEventCycleHandler?.removeCallbacks(it) }
+        sEventCycleRunnable = null
+        sEventCycleHandler = null
     }
 
-    /** 事件滚动专用轻量更新 —— 只更新时间 + 事件，不碰天气（无网络 I/O）*/
+    /** 事件循环 —— 只更新事件模块，不碰时间/天气（使用 partialUpdate 避免覆盖） */
     private fun cycleEvents(context: Context) {
         val p = prefs(context)
         p.edit().putInt(PREF_EVENT_INDEX, p.getInt(PREF_EVENT_INDEX, 0) + 1).apply()
 
         val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
-        applyTheme(context, views)
-        setTimeSection(views, context)
         setEventsSection(context, views)
         setClickIntents(context, views, 0)
 
+        val am = AppWidgetManager.getInstance(context)
+        for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
+            am.partiallyUpdateAppWidget(id, views)
+        }
+    }
+
+    /** 时间格式切换 —— 只更新时间文本 */
+    private fun toggleTimeFormat(context: Context) {
+        val p = prefs(context)
+        p.edit().putBoolean(PREF_24H, !p.getBoolean(PREF_24H, true)).apply()
+
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
+        setTimeText(views, context)
+
+        val am = AppWidgetManager.getInstance(context)
+        for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
+            am.partiallyUpdateAppWidget(id, views)
+        }
+    }
+
+    // ===== 独立时间刷新（1 秒间隔） =====
+    private fun startTimeTick(context: Context) {
+        stopTimeTick()
+        val handler = Handler(context.mainLooper)
+        val runnable = Runnable {
+            runCatching {
+                val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
+                setTimeText(views, context)
+                val am = AppWidgetManager.getInstance(context)
+                for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
+                    am.partiallyUpdateAppWidget(id, views)
+                }
+            }
+            // 续约下一次
+            val currentRunnable = sTimeTickRunnable
+            if (currentRunnable != null) {
+                sTimeTickHandler?.postDelayed(currentRunnable, 1000)
+            }
+        }
+        val tickRunnable = runnable
+        sTimeTickHandler = handler
+        sTimeTickRunnable = tickRunnable
+        handler.post(tickRunnable)
+    }
+
+    private fun stopTimeTick() {
+        sTimeTickRunnable?.let { sTimeTickHandler?.removeCallbacks(it) }
+        sTimeTickRunnable = null
+        sTimeTickHandler = null
+    }
+
+    // ===== 天气刷新（Handler 兜底，30 分钟间隔） =====
+    private fun startWeatherHandler(context: Context) {
+        stopWeatherHandler()
+        val handler = Handler(context.mainLooper)
+        val runnable = Runnable {
+            runCatching { refreshWeather(context) }
+            // 续约下一次
+            val currentRunnable = sWeatherRunnable
+            if (currentRunnable != null) {
+                sWeatherHandler?.postDelayed(currentRunnable, WEATHER_REFRESH_INTERVAL)
+            }
+        }
+        val weatherRunnable = runnable
+        sWeatherHandler = handler
+        sWeatherRunnable = weatherRunnable
+        handler.postDelayed(weatherRunnable, WEATHER_REFRESH_INTERVAL)
+    }
+
+    private fun stopWeatherHandler() {
+        sWeatherRunnable?.let { sWeatherHandler?.removeCallbacks(it) }
+        sWeatherRunnable = null
+        sWeatherHandler = null
+    }
+
+    /** 全量刷新天气及时间/事件（通过 buildDynamicViews） */
+    private fun refreshWeather(context: Context) {
+        val views = buildDynamicViews(context, 0)
         val am = AppWidgetManager.getInstance(context)
         for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
             am.updateAppWidget(id, views)
         }
     }
 
-    /** 时间格式切换专用轻量更新 —— 只更新时间，不碰天气/事件 */
-    private fun toggleTimeFormat(context: Context) {
-        val p = prefs(context)
-        p.edit().putBoolean(PREF_24H, !p.getBoolean(PREF_24H, true)).apply()
-
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
-        applyTheme(context, views)
-        setTimeText(views, context)
-        setClickIntents(context, views, 0)
-
-        val am = AppWidgetManager.getInstance(context)
-        for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
-            am.updateAppWidget(id, views)
+    // ===== AlarmManager 天气刷新（进程被杀后仍能触发） =====
+    private fun scheduleWeatherAlarm(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val intent = Intent(context, CombinedWidgetProvider::class.java).apply {
+            action = ACTION_REFRESH_WEATHER
         }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_CODE_WEATHER, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        runCatching { am.cancel(pi) }
+
+        val triggerAt = System.currentTimeMillis() + WEATHER_REFRESH_INTERVAL
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                if (am.canScheduleExactAlarms()) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                } else {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                }
+            } else {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            }
+        } catch (_: SecurityException) {
+            runCatching { am.setInexactRepeating(AlarmManager.RTC_WAKEUP, triggerAt, 3600000, pi) }
+        }
+    }
+
+    private fun cancelWeatherAlarm(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val intent = Intent(context, CombinedWidgetProvider::class.java).apply {
+            action = ACTION_REFRESH_WEATHER
+        }
+        val pi = PendingIntent.getBroadcast(
+            context, REQUEST_CODE_WEATHER, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        runCatching { am.cancel(pi) }
     }
 
     // ===== 点击跳转 =====
@@ -507,15 +633,28 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         private const val ACTION_TOGGLE_TIME_FORMAT = "com.minirili.app.TOGGLE_TIME_FORMAT"
         private const val ACTION_TOGGLE_BG_MODE = "com.minirili.app.TOGGLE_BG_MODE"
         private const val ACTION_CYCLE_EVENT = "com.minirili.app.CYCLE_EVENT"
+        private const val ACTION_REFRESH_WEATHER = "com.minirili.app.REFRESH_WEATHER"
+
         private const val REQUEST_CODE_CYCLE = 0xC1C1
+        private const val REQUEST_CODE_WEATHER = 0xC1C2
+        private const val WEATHER_REFRESH_INTERVAL = 30 * 60 * 1000L // 30 分钟
+
         private const val PREF_NAME = "widget_prefs"
         private const val PREF_24H = "time_24h"
         private const val PREF_TRANSPARENT = "bg_transparent"
         private const val PREF_EVENT_INDEX = "event_index"
 
-        /* 事件循环 Handler（static 避免实例重建后跑飞）*/
-        private var sCycleHandler: android.os.Handler? = null
-        private var sCycleRunnable: Runnable? = null
+        /* 时间 1 秒刷新（static 避免实例重建后丢失） */
+        private var sTimeTickHandler: Handler? = null
+        private var sTimeTickRunnable: Runnable? = null
+
+        /* 天气 30 分钟刷新（Handler 兜底） */
+        private var sWeatherHandler: Handler? = null
+        private var sWeatherRunnable: Runnable? = null
+
+        /* 事件循环 5 秒 */
+        private var sEventCycleHandler: Handler? = null
+        private var sEventCycleRunnable: Runnable? = null
 
         private val DEFAULT_CITY = City(
             id = "39.9042,116.4074", name = "北京",
