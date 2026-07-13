@@ -1,6 +1,7 @@
 # MiniRili
 
 轻量化、离线优先的安卓日历 APP，支持公历/农历/节气/节假日、事件提醒、天气。
+不再忍受烦人的弹窗广告、摇一摇广告，轻量离线本地数据导入导出换机无忧。
 
 ## 功能特性
 
@@ -91,6 +92,10 @@
 ├── settings.gradle.kts
 └── 需求文档.md
 ```
+
+## 使用帮助
+
+📖 [使用指南与常见问题](https://github.com/xingyunyimo/MiniRili/discussions)
 
 ## 开源许可证
 
