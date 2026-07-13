@@ -1,0 +1,98 @@
+MiniRili Third-Party Notices
+============================
+
+This project includes the following third-party dependencies, each with its own
+license and copyright notice.
+
+---
+
+## Android Jetpack / AndroidX
+
+- **License**: Apache License 2.0
+- **Copyright**: The Android Open Source Project
+- **Libraries**:
+  - core-ktx, appcompat, activity-compose, lifecycle-runtime-ktx
+  - Compose UI, Compose Material3, Material Icons Extended
+  - Navigation Compose
+  - Room (runtime, ktx)
+  - WorkManager (work-runtime-ktx)
+  - DataStore Preferences
+  - Lifecycle (viewmodel-compose, runtime-compose)
+  - Hilt Navigation Compose
+- **Source**: https://developer.android.com/jetpack
+
+## Dagger / Hilt
+
+- **License**: Apache License 2.0
+- **Copyright**: The Dagger Authors
+- **Project**: https://dagger.dev/
+- **Source**: https://github.com/google/dagger
+
+## Kotlin
+
+- **License**: Apache License 2.0
+- **Copyright**: The JetBrains Kotlin Project
+- **Project**: https://kotlinlang.org/
+- **Source**: https://github.com/JetBrains/kotlin
+
+## Kotlin Coroutines
+
+- **License**: Apache License 2.0
+- **Copyright**: The JetBrains Kotlin Project
+- **Project**: https://kotlinlang.org/docs/coroutines-overview.html
+- **Source**: https://github.com/Kotlin/kotlinx.coroutines
+
+## JUnit
+
+- **License**: Eclipse Public License 2.0
+- **Copyright**: The JUnit Team
+- **Project**: https://junit.org/junit4/
+- **Scope**: Testing only (not included in the released APK)
+
+---
+
+## External Data Sources
+
+The following services are accessed at runtime by this application.
+Their data is not bundled in the source code.
+
+### Open-Meteo Weather API
+
+- **License**: CC BY 4.0 / Open Data Commons
+- **Project**: https://open-meteo.com/
+- **Usage**: Weather forecast, air quality, and city search data.
+  Free tier is limited to non-commercial use.
+  Commercial deployments require a subscription or self-hosting.
+
+### Nominatim / OpenStreetMap
+
+- **License**: Open Data Commons ODbL 1.0 (data), Apache License 2.0 (software)
+- **Project**: https://nominatim.org/
+- **Usage**: Reverse geocoding (GPS coordinates to city name), used as a fallback.
+
+---
+
+## Apache License 2.0 Summary
+
+```
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+The full Apache 2.0 license text is available in the project LICENSE file.
+
+---
+
+## Eclipse Public License 2.0 Summary
+
+The JUnit library (testing only) is licensed under the Eclipse Public License 2.0.
+A copy of EPL 2.0 is available at https://www.eclipse.org/legal/epl-2.0/
