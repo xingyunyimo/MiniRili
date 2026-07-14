@@ -13,10 +13,17 @@ import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -28,8 +35,12 @@ import com.minirili.app.ui.navigation.CalendarNavHost
 import com.minirili.app.ui.navigation.Screen
 import com.minirili.app.ui.theme.CalendarTheme
 import com.minirili.app.ui.viewmodel.EventViewModel
+import com.minirili.app.utils.AutoStartHelper
+import com.minirili.app.utils.AppLaunchPrefs
+import com.minirili.app.utils.AutoStartHelper.ManufacturerGuide
 import com.minirili.app.utils.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
+import java.util.concurrent.atomic.AtomicBoolean
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -49,6 +60,18 @@ class MainActivity : AppCompatActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController: NavHostController = rememberNavController()
+                    var showAutoStartPrompt by remember { mutableStateOf(false) }
+
+                    // 每次启动检测厂商自启动：设备支持 + 30天未提示 → 弹窗引导
+                    val autoStartChecked = remember { AtomicBoolean() }
+                    LaunchedEffect(Unit) {
+                        if (autoStartChecked.compareAndSet(false, true)) {
+                            if (AutoStartHelper.hasAutoStartSettings(this@MainActivity) &&
+                                AppLaunchPrefs.shouldAskAutoStart(this@MainActivity)) {
+                                showAutoStartPrompt = true
+                            }
+                        }
+                    }
 
                     NotificationRouter(
                         navController,
@@ -58,6 +81,18 @@ class MainActivity : AppCompatActivity() {
                         navigateToAllEvents = intent?.getStringExtra("navigate_to") == "all_events",
                         navigateToDay = intent?.getStringExtra("navigate_to") == "day"
                     )
+
+                    if (showAutoStartPrompt) {
+                        AutoStartDialog(
+                            onLater = {
+                                showAutoStartPrompt = false
+                            },
+                            onDismiss30d = {
+                                showAutoStartPrompt = false
+                                AppLaunchPrefs.markAllAsked(this@MainActivity)
+                            }
+                        )
+                    }
 
                     CalendarNavHost(
                         navController = navController,
@@ -185,4 +220,30 @@ private fun NotificationRouter(navController: NavHostController, notificationEve
             }
         }
     }
+}
+
+@Composable
+private fun AutoStartDialog(
+    onLater: () -> Unit,
+    onDismiss30d: () -> Unit
+) {
+    val guide = remember { AutoStartHelper.getManufacturerGuide() }
+    val body = buildString {
+        append("为确保事件闹钟提醒准时触发、桌面插件正常更新，建议将 迷历 加入系统权限白名单：\n\n")
+        append("• 开机启动：允许系统开机后自动运行 迷历\n")
+        append("• 后台自启动：允许 迷历 在后台常驻运行\n\n")
+        if (guide != null) {
+            append(guide.guideHint)
+        } else {
+            append("请进入系统「设置 → 应用管理 → 迷历」，找到「自启动」或「后台管理」并允许。\n")
+            append("不同厂商设置路径不同，可在「手机管家」或「安全中心」中搜索「自启动」相关设置。")
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onLater,
+        title = { Text("将 迷历 加入开机启动") },
+        text = { Text(body) },
+        confirmButton = { TextButton(onClick = onLater) { Text("稍后设置") } },
+        dismissButton = { TextButton(onClick = onDismiss30d) { Text("30天内不再提示") } }
+    )
 }
