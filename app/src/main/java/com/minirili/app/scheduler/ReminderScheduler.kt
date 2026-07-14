@@ -66,15 +66,12 @@ class ReminderScheduler(
         if (reminderTime <= System.currentTimeMillis()) return  // 已过去的时间，跳过
 
         try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                if (alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, reminderTime, pendingIntent)
-                } else {
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, reminderTime, pendingIntent)
-                }
-            } else {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, reminderTime, pendingIntent)
-            }
+            // setAlarmClock 是系统闹钟使用的最高优先级调度方式，
+            // 在深度 Doze（锁屏待机）下仍能准时触发并充分唤醒音频子系统播放铃声。
+            // setExactAndAllowWhileIdle 在深度 Doze 下接收器可以启动（通知正常），但音频子系统未必就绪，
+            // 导致铃声推迟到用户按下电源键才播放。
+            val alarmInfo = AlarmManager.AlarmClockInfo(reminderTime, pendingIntent)
+            alarmManager.setAlarmClock(alarmInfo, pendingIntent)
         } catch (_: SecurityException) {
         }
     }

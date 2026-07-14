@@ -181,4 +181,13 @@ object AppLaunchPrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putLong(KEY_AUTOSTART_ASKED, System.currentTimeMillis()).apply()
     }
+
+    /** 一键标记两项均为"已询问"，用于合并对话框统一关闭 */
+    fun markAllAsked(context: Context) {
+        val now = System.currentTimeMillis()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_BATTERY_ASKED, now)
+            .putLong(KEY_AUTOSTART_ASKED, now)
+            .apply()
+    }
 }

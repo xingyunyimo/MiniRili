@@ -45,9 +45,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
-    /** 电池引导"去设置"后 pending 复查标记：onResume 检测到真改了才 markBatteryAsked */
-    private var batteryPendingCheck = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -63,39 +60,15 @@ class MainActivity : AppCompatActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController: NavHostController = rememberNavController()
-                    var showBatteryPrompt by remember { mutableStateOf(false) }
-                    var showAutoStartPrompt by remember { mutableStateOf(false) }
+                    var showBgPermissionPrompt by remember { mutableStateOf(false) }
 
-                    // 启动时检测：电池优化 + 常驻后台。各自独立控制，30 天内不再重复提示
-                    val batteryChecked = remember { AtomicBoolean() }
+                    // 每次启动检测电池白名单：未加入 + 30天未提示 → 弹窗引导
+                    val permissionChecked = remember { AtomicBoolean() }
                     LaunchedEffect(Unit) {
-                        if (batteryChecked.compareAndSet(false, true)) {
+                        if (permissionChecked.compareAndSet(false, true)) {
                             val batteryIgnored = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this@MainActivity)
-                            val batteryShouldAsk = AppLaunchPrefs.shouldAskBattery(this@MainActivity)
-                            if (!batteryIgnored && batteryShouldAsk) {
-                                showBatteryPrompt = true
-                            }
-                        }
-                    }
-                    val autoStartChecked = remember { AtomicBoolean() }
-                    LaunchedEffect(Unit) {
-                        if (autoStartChecked.compareAndSet(false, true)) {
-                            val autoStartAvailable = BatteryOptimizationHelper.hasAutoStartSettings(this@MainActivity)
-                            val autoStartShouldAsk = AppLaunchPrefs.shouldAskAutoStart(this@MainActivity)
-                            if (autoStartAvailable && autoStartShouldAsk) {
-                                showAutoStartPrompt = true
-                            }
-                        }
-                    }
-
-                    // 创建带提醒事件后的引导：ViewModel 通知时检查是否需要弹电池引导
-                    LaunchedEffect(Unit) {
-                        viewModel.batteryGuideTrigger.collect {
-                            if (showBatteryPrompt) return@collect  // 已有引导对话框，不重复
-                            val batteryIgnored = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this@MainActivity)
-                            val batteryShouldAsk = AppLaunchPrefs.shouldAskBattery(this@MainActivity)
-                            if (!batteryIgnored && batteryShouldAsk) {
-                                showBatteryPrompt = true
+                            if (!batteryIgnored && AppLaunchPrefs.shouldAskBattery(this@MainActivity)) {
+                                showBgPermissionPrompt = true
                             }
                         }
                     }
@@ -109,34 +82,14 @@ class MainActivity : AppCompatActivity() {
                         navigateToDay = intent?.getStringExtra("navigate_to") == "day"
                     )
 
-                    if (showBatteryPrompt) {
-                        BatteryOptDialog(
-                            onConfirm = {
-                                showBatteryPrompt = false
-                                batteryPendingCheck = true  // 跳转后待复查
-                                BatteryOptimizationHelper.startBatterySettings(this@MainActivity)
+                    if (showBgPermissionPrompt) {
+                        BackgroundPermissionDialog(
+                            onDismiss30d = {
+                                showBgPermissionPrompt = false
+                                AppLaunchPrefs.markAllAsked(this@MainActivity)
                             },
-                            onDismiss = {
-                                showBatteryPrompt = false
-                                AppLaunchPrefs.markBatteryAsked(this@MainActivity)
-                            }
-                        )
-                    }
-
-                    if (showAutoStartPrompt) {
-                        val guide = remember { BatteryOptimizationHelper.getManufacturerGuide() }
-                        AutoStartDialog(
-                            guide = guide,
-                            onConfirm = {
-                                showAutoStartPrompt = false
-                                AppLaunchPrefs.markAutoStartAsked(this@MainActivity)
-                                BatteryOptimizationHelper.buildAutoStartIntent(this@MainActivity)?.let {
-                                    runCatching { startActivity(it) }
-                                }
-                            },
-                            onDismiss = {
-                                showAutoStartPrompt = false
-                                AppLaunchPrefs.markAutoStartAsked(this@MainActivity)
+                            onDismissOnce = {
+                                showBgPermissionPrompt = false
                             }
                         )
                     }
@@ -162,11 +115,6 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         AlarmReceiver.stopAlarm()
-        // 电池引导"去设置"后复查：用户是否真的改了白名单
-        if (batteryPendingCheck && BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this)) {
-            batteryPendingCheck = false
-            AppLaunchPrefs.markBatteryAsked(this)
-        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -275,34 +223,26 @@ private fun NotificationRouter(navController: NavHostController, notificationEve
 }
 
 @Composable
-private fun BatteryOptDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("保证提醒不会被漏掉") },
-        text = {
-            Text(
-                "为了保证闹钟在后台稳定触发，建议把「MiniRili」加入电池优化白名单。未加入的设备可能在锁屏几小时后收不到提醒。"
-            )
-        },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("去设置") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后再说") } }
-    )
-}
-
-@Composable
-private fun AutoStartDialog(guide: ManufacturerGuide?, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    val text = if (guide != null) {
-        "为了闹钟不被系统自动清理，建议允许 MiniRili 后台常驻。" +
-            guide.guideHint + "。点「去设置」后将跳转至设置页。"
-    } else {
-        "为了闹钟不被系统自动清理，建议您在手机管家中把「MiniRili」加入「自启动 / 后台常驻」白名单。" +
-            "不同厂商设置路径不同，点「去设置」后请手动找到「自启动管理」或「后台管理」并允许。"
+private fun BackgroundPermissionDialog(
+    onDismiss30d: () -> Unit,
+    onDismissOnce: () -> Unit
+) {
+    val guide = remember { BatteryOptimizationHelper.getManufacturerGuide() }
+    val body = buildString {
+        append("为保证闹钟在锁屏状态也能准时响铃，请手动完成以下系统设置：\n\n")
+        append("1. 电池优化白名单：在系统「设置 → 电池 → 电池优化」中，将 MiniRili 设为「不优化」\n\n")
+        append("2. 后台自启动")
+        if (guide != null) {
+            append("：${guide.guideHint}")
+        } else {
+            append("：在手机管家中将 MiniRili 加入自启动白名单")
+        }
     }
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("允许后台常驻") },
-        text = { Text(text) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("去设置") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("稍后再说") } }
+        onDismissRequest = onDismissOnce,
+        title = { Text("保证闹钟准时提醒") },
+        text = { Text(body) },
+        confirmButton = { TextButton(onClick = onDismissOnce) { Text("稍后设置") } },
+        dismissButton = { TextButton(onClick = onDismiss30d) { Text("30天内不再提示") } }
     )
 }

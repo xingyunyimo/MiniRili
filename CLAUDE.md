@@ -76,7 +76,7 @@ WeatherRepository (@Singleton)
 - **自适应图标 foreground 必须是 drawable**，不能是 `@color`。
 - **ICS 导出**：走 `FileProvider`（authority `${applicationId}.fileprovider`），不能写 `file://` URI。
 - **`POST_NOTIFICATIONS`**（Android 13+）必须运行时请求。
-- **`SCHEDULE_EXACT_ALARM`**：Android 13+ 有 `canScheduleExactAlarms()` 守卫，false 时降级 `setAndAllowWhileIdle`。
+- **`SCHEDULE_EXACT_ALARM`**：Android 13+ 有 `canScheduleExactAlarms()` 守卫，`setAlarmClock` 不受此限制（系统闹钟最高优先级），但 widget 天气刷新和出行建议仍用 `setExactAndAllowWhileIdle`，需降级 `setAndAllowWhileIdle`。
 - **Material3 FilterChip 配色**：border 要单独写 `FilterChip(border = ...)`。
 
 ## 日期工具
@@ -89,7 +89,7 @@ WeatherRepository (@Singleton)
 ## 提醒链路
 
 ### 一次性提醒
-事件保存 → `EventRepository.insert/update` → `ReminderScheduler.scheduleReminder(eventId, gregorianDate, reminderTime)`（requestCode = `eventId.toInt() << 8`）→ AlarmManager `setExactAndAllowWhileIdle` → `AlarmReceiver.onReceive` → `NotificationHelper` 发通知 + `playAlarmSound`。
+事件保存 → `EventRepository.insert/update` → `ReminderScheduler.scheduleReminder(eventId, gregorianDate, reminderTime)`（requestCode = `eventId.toInt() << 8`）→ AlarmManager `setAlarmClock(AlarmClockInfo, PendingIntent)` → `AlarmReceiver.onReceive` → `NotificationHelper` 发通知 + `playAlarmSound`。
 
 ### 周期事件（repeatType != "none"）
 `EventRepository.insert/update` → `RecurringReminderScheduler.scheduleRecurringReminder(event, baseDate)` → 预约未来 N 次，每次独立 requestCode = `(eventId.toInt() << 8) | occurrenceIndex`。每次触发后 `scheduleNextOccurrence` 续约下一轮。
