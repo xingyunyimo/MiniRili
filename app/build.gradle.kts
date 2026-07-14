@@ -14,7 +14,7 @@ android {
         applicationId = "com.minirili.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
+        versionCode = 101
         versionName = "1.0.1"
     }
 

@@ -11,19 +11,29 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -83,12 +93,8 @@ class MainActivity : AppCompatActivity() {
 
                     if (showAutoStartPrompt) {
                         AutoStartDialog(
-                            onLater = {
+                            onDismiss = {
                                 showAutoStartPrompt = false
-                            },
-                            onDismiss30d = {
-                                showAutoStartPrompt = false
-                                AppLaunchPrefs.markAllAsked(this@MainActivity)
                             }
                         )
                     }
@@ -223,26 +229,58 @@ private fun NotificationRouter(navController: NavHostController, notificationEve
 
 @Composable
 private fun AutoStartDialog(
-    onLater: () -> Unit,
-    onDismiss30d: () -> Unit
+    onDismiss: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val guide = remember { AutoStartHelper.getManufacturerGuide() }
-    val body = buildString {
-        append("为确保事件闹钟提醒准时触发、桌面插件正常更新，建议将 迷历 加入系统权限白名单：\n\n")
-        append("• 开机启动：允许系统开机后自动运行 迷历\n")
-        append("• 后台自启动：允许 迷历 在后台常驻运行\n\n")
-        if (guide != null) {
-            append(guide.guideHint)
-        } else {
-            append("请进入系统「设置 → 应用管理 → 迷历」，找到「自启动」或「后台管理」并允许。\n")
-            append("不同厂商设置路径不同，可在「手机管家」或「安全中心」中搜索「自启动」相关设置。")
-        }
-    }
+    var suppress30d by remember { mutableStateOf(false) }
+
     AlertDialog(
-        onDismissRequest = onLater,
-        title = { Text("将 迷历 加入开机启动") },
-        text = { Text(body) },
-        confirmButton = { TextButton(onClick = onDismiss30d) { Text("30天内不再提示") } },
-        dismissButton = { TextButton(onClick = onLater) { Text("稍后设置") } }
+        onDismissRequest = {},
+        title = { Text("将迷历加入开机后台自启动！") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    "为确保事件闹钟提醒准时触发、桌面插件正常更新，请将 迷历 加入系统权限白名单："
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("⚠️ 开机启动：允许系统开机后自动运行 迷历")
+                Spacer(Modifier.height(4.dp))
+                Text("⚠️ 后台自启动：允许 迷历 在后台常驻运行")
+                Spacer(Modifier.height(12.dp))
+                if (guide != null) {
+                    Text(guide.guideHint)
+                } else {
+                    Text("请进入系统「设置 → 应用管理 → 迷历」，找到「自启动」或「后台管理」并允许。")
+                    Text("不同厂商设置路径不同，可在「手机管家」或「安全中心」中搜索「自启动」相关设置。")
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(
+                        checked = suppress30d,
+                        onCheckedChange = { suppress30d = it }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("确认后 30 天内不再弹出")
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (suppress30d) {
+                    AppLaunchPrefs.markAllAsked(context)
+                }
+                onDismiss()
+            }) {
+                Text("确认")
+            }
+        }
     )
 }
