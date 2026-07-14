@@ -1,5 +1,6 @@
 package com.minirili.app.receivers
 
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -38,6 +39,8 @@ class AlarmReceiver : BroadcastReceiver() {
         @Volatile
         private var stopRequested = false
 
+        const val ACTION_DISMISS_ALARM = "com.minirili.app.action.DISMISS_ALARM"
+
         /** 让外部（用户确认事件后）能主动停止正在播放的闹钟 */
         fun stopAlarm() {
             stopRequested = true
@@ -72,6 +75,12 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        // 通知栏划掉 → 同步停闹钟
+        if (intent.action == ACTION_DISMISS_ALARM) {
+            stopAlarm()
+            return
+        }
+
         // 持有唤醒锁：即使 CPU 短暂休眠，铃声和振动也会仍在执行
         acquireWakeLock(context)
 
@@ -105,6 +114,15 @@ class AlarmReceiver : BroadcastReceiver() {
 
                             if (wantNotification) {
                                 NotificationHelper.createNotificationChannel(context)
+                                // 通知栏划掉这条通知 → 同步停闹钟
+                                val dismissPendingIntent = PendingIntent.getBroadcast(
+                                    context,
+                                    (eventId.toInt() and 0xFFFFFF) or 0x40000000,
+                                    Intent(context, AlarmReceiver::class.java).apply {
+                                        action = ACTION_DISMISS_ALARM
+                                    },
+                                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                                )
                                 val notification = NotificationHelper.buildReminderNotification(
                                     context,
                                     title,
@@ -118,6 +136,7 @@ class AlarmReceiver : BroadcastReceiver() {
                                         SnoozeReceiver.createPendingIntent(context, eventId, eventDateStr, 60, title, content, 1))
                                     addAction(0, "延后 1天",
                                         SnoozeReceiver.createPendingIntent(context, eventId, eventDateStr, 1440, title, content, 2))
+                                    setDeleteIntent(dismissPendingIntent)
                                 }
                                 NotificationHelper.sendNotification(context, notification)
                             }
