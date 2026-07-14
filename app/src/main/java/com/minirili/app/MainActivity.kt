@@ -62,12 +62,11 @@ class MainActivity : AppCompatActivity() {
                     val navController: NavHostController = rememberNavController()
                     var showAutoStartPrompt by remember { mutableStateOf(false) }
 
-                    // 每次启动检测厂商自启动：设备支持 + 30天未提示 → 弹窗引导
+                    // 每次启动检测：30天未提示 → 弹窗引导厂商自启动/开机启动
                     val autoStartChecked = remember { AtomicBoolean() }
                     LaunchedEffect(Unit) {
                         if (autoStartChecked.compareAndSet(false, true)) {
-                            if (AutoStartHelper.hasAutoStartSettings(this@MainActivity) &&
-                                AppLaunchPrefs.shouldAskAutoStart(this@MainActivity)) {
+                            if (AppLaunchPrefs.shouldAskAutoStart(this@MainActivity)) {
                                 showAutoStartPrompt = true
                             }
                         }
@@ -243,7 +242,7 @@ private fun AutoStartDialog(
         onDismissRequest = onLater,
         title = { Text("将 迷历 加入开机启动") },
         text = { Text(body) },
-        confirmButton = { TextButton(onClick = onLater) { Text("稍后设置") } },
-        dismissButton = { TextButton(onClick = onDismiss30d) { Text("30天内不再提示") } }
+        confirmButton = { TextButton(onClick = onDismiss30d) { Text("30天内不再提示") } },
+        dismissButton = { TextButton(onClick = onLater) { Text("稍后设置") } }
     )
 }
