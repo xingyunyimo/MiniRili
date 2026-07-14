@@ -13,17 +13,10 @@ import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -35,12 +28,8 @@ import com.minirili.app.ui.navigation.CalendarNavHost
 import com.minirili.app.ui.navigation.Screen
 import com.minirili.app.ui.theme.CalendarTheme
 import com.minirili.app.ui.viewmodel.EventViewModel
-import com.minirili.app.utils.AppLaunchPrefs
-import com.minirili.app.utils.BatteryOptimizationHelper
 import com.minirili.app.utils.NotificationHelper
-import com.minirili.app.utils.BatteryOptimizationHelper.ManufacturerGuide
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.concurrent.atomic.AtomicBoolean
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -60,18 +49,6 @@ class MainActivity : AppCompatActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController: NavHostController = rememberNavController()
-                    var showBgPermissionPrompt by remember { mutableStateOf(false) }
-
-                    // 每次启动检测电池白名单：未加入 + 30天未提示 → 弹窗引导
-                    val permissionChecked = remember { AtomicBoolean() }
-                    LaunchedEffect(Unit) {
-                        if (permissionChecked.compareAndSet(false, true)) {
-                            val batteryIgnored = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this@MainActivity)
-                            if (!batteryIgnored && AppLaunchPrefs.shouldAskBattery(this@MainActivity)) {
-                                showBgPermissionPrompt = true
-                            }
-                        }
-                    }
 
                     NotificationRouter(
                         navController,
@@ -81,18 +58,6 @@ class MainActivity : AppCompatActivity() {
                         navigateToAllEvents = intent?.getStringExtra("navigate_to") == "all_events",
                         navigateToDay = intent?.getStringExtra("navigate_to") == "day"
                     )
-
-                    if (showBgPermissionPrompt) {
-                        BackgroundPermissionDialog(
-                            onDismiss30d = {
-                                showBgPermissionPrompt = false
-                                AppLaunchPrefs.markAllAsked(this@MainActivity)
-                            },
-                            onDismissOnce = {
-                                showBgPermissionPrompt = false
-                            }
-                        )
-                    }
 
                     CalendarNavHost(
                         navController = navController,
@@ -220,29 +185,4 @@ private fun NotificationRouter(navController: NavHostController, notificationEve
             }
         }
     }
-}
-
-@Composable
-private fun BackgroundPermissionDialog(
-    onDismiss30d: () -> Unit,
-    onDismissOnce: () -> Unit
-) {
-    val guide = remember { BatteryOptimizationHelper.getManufacturerGuide() }
-    val body = buildString {
-        append("为保证闹钟在锁屏状态也能准时响铃，请手动完成以下系统设置：\n\n")
-        append("1. 电池优化白名单：在系统「设置 → 电池 → 电池优化」中，将 MiniRili 设为「不优化」\n\n")
-        append("2. 后台自启动")
-        if (guide != null) {
-            append("：${guide.guideHint}")
-        } else {
-            append("：在手机管家中将 MiniRili 加入自启动白名单")
-        }
-    }
-    AlertDialog(
-        onDismissRequest = onDismissOnce,
-        title = { Text("保证闹钟准时提醒") },
-        text = { Text(body) },
-        confirmButton = { TextButton(onClick = onDismissOnce) { Text("稍后设置") } },
-        dismissButton = { TextButton(onClick = onDismiss30d) { Text("30天内不再提示") } }
-    )
 }

@@ -23,10 +23,6 @@ class EventViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    /** 用户首次创建带提醒的事件时 emit，MainActivity 收集后弹电池白名单引导 */
-    private val _batteryGuideTrigger = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val batteryGuideTrigger: SharedFlow<Unit> = _batteryGuideTrigger.asSharedFlow()
-
     val currentEvents: StateFlow<List<EventEntity>> = _selectedDate
         .flatMapLatest { date -> repository.getEventsByDate(date) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -55,22 +51,12 @@ class EventViewModel @Inject constructor(
                 updatedAt = now,
                 sortOrder = if (event.sortOrder == 0L) now else event.sortOrder
             ))
-            // 新建事件设置了提醒 → 检查是否需要弹电池引导
-            if (event.reminderTime > 0 || event.repeatType != "none") {
-                _batteryGuideTrigger.tryEmit(Unit)
-            }
         }
     }
 
     fun updateEvent(event: EventEntity) {
         viewModelScope.launch {
-            // 检查旧事件是否有提醒：仅当"之前无提醒 → 现在有提醒"时才触发引导
-            val oldEvent = repository.getEventById(event.id)
-            val hadReminder = oldEvent?.let { it.reminderTime > 0 || it.repeatType != "none" } ?: false
             repository.update(event.copy(updatedAt = System.currentTimeMillis()))
-            if (!hadReminder && (event.reminderTime > 0 || event.repeatType != "none")) {
-                _batteryGuideTrigger.tryEmit(Unit)
-            }
         }
     }
 
