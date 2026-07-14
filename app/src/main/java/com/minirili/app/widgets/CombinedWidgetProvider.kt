@@ -147,7 +147,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
 
     // ===== 静态渲染 =====
     private fun buildStaticViews(context: Context, appWidgetId: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
         applyTheme(context, views)
         views.setTextViewText(R.id.widget_date, "")
         views.setTextViewText(R.id.widget_lunar_date, "加载中…")
@@ -174,7 +174,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
 
     // ===== 动态渲染 =====
     private fun buildDynamicViews(context: Context, appWidgetId: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
         applyTheme(context, views)
 
         runCatching { setTimeSection(views, context) }
@@ -434,7 +434,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         val p = prefs(context)
         p.edit().putInt(PREF_EVENT_INDEX, p.getInt(PREF_EVENT_INDEX, 0) + 1).apply()
 
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
         setEventsSection(context, views)
         setClickIntents(context, views, 0)
 
@@ -449,7 +449,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         val p = prefs(context)
         p.edit().putBoolean(PREF_24H, !p.getBoolean(PREF_24H, true)).apply()
 
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
         setTimeText(views, context)
 
         val am = AppWidgetManager.getInstance(context)
@@ -464,7 +464,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         val handler = Handler(context.mainLooper)
         val runnable = Runnable {
             runCatching {
-                val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
+                val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
                 setTimeText(views, context)
                 val am = AppWidgetManager.getInstance(context)
                 for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
