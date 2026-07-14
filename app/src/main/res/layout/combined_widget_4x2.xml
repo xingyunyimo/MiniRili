@@ -105,6 +105,20 @@
         android:layout_marginBottom="1dp"
         android:background="#33000000" />
 
+    <!-- 底部分割线（Provider 代码引用，实际隐藏） -->
+    <TextView
+        android:id="@+id/widget_divider_bottom"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+    <!-- 城市名（Provider 代码引用，隐藏） -->
+    <TextView
+        android:id="@+id/widget_city"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
     <!-- ===== 第三行：天气描述 + 事件信息 ===== -->
     <LinearLayout
         android:layout_width="match_parent"
