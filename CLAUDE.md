@@ -2,7 +2,7 @@
 
 轻量离线 Android 农历日历 APP。仓库：`https://github.com/xingyunyimo/MiniRili.git`。
 
-核心功能：万年历（公历+农历+节气，月/周/日/年视图）、事件与一次性提醒、导入栏+闹钟双通道通知、本地 ICS/JSON 导入导出、搜索、节假日（含调休）、农历（基于 android.icu.util.ChineseCalendar，覆盖 1900-2200）。
+核心功能：万年历（公历+农历+节气，月/日/年视图，周视图已隐藏）、事件与一次性提醒、导入栏+闹钟双通道通知、本地 ICS/JSON 导入导出、搜索、节假日（含调休）、农历（基于 android.icu.util.ChineseCalendar，覆盖 1900-2200）。
 
 ## Build & Run
 
@@ -67,7 +67,9 @@ WeatherRepository (@Singleton)
 
 关键约定：
 - **Repository 包住提醒调度**。所有对事件的增删改都走 `EventRepository`。
-- **`EventEntity.gregorianDate`** 是公历主键格式 `YYYY-MM-DD`。`reminderTime` 是 Unix 毫秒时间戳（闹钟触发时间），`reminderOffset` 是偏移量（秒）。
+- **`EventEntity.gregorianDate`** 是公历主键格式 `YYYY-MM-DD`。`reminderTime` 是 Unix 毫秒时间戳（事件时间，不含偏移），`reminderOffset` 是偏移量（分钟）。
+- **提醒触发时间** = `reminderTime - reminderOffset * 60 * 1000`（在调度时计算，不在保存时减）。
+- **`EventEntity.useLunar`** 区分农历/阳历事件；重复类型 `"monthly"/"yearly"` 配合 `useLunar` 字段决定是否走农历排期。
 - **导航**：新增页面 route 必须加进 `Screen` sealed class（`ui/navigation/Screen.kt`），事件详情用 `Screen.EventDetail.createRoute(id)`。
 
 ## Android 适配陷阱
@@ -89,10 +91,12 @@ WeatherRepository (@Singleton)
 ## 提醒链路
 
 ### 一次性提醒
-事件保存 → `EventRepository.insert/update` → `ReminderScheduler.scheduleReminder(eventId, gregorianDate, reminderTime)`（requestCode = `eventId.toInt() << 8`）→ AlarmManager `setAlarmClock(AlarmClockInfo, PendingIntent)` → `AlarmReceiver.onReceive` → `NotificationHelper` 发通知 + `playAlarmSound`。
+事件保存 → `EventRepository.insert/update` → 计算触发时间 `triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L` → `ReminderScheduler.scheduleReminder(eventId, gregorianDate, triggerTime)`（requestCode = `eventId.toInt() << 8`）→ AlarmManager `setAlarmClock(AlarmClockInfo, PendingIntent)` → `AlarmReceiver.onReceive` → `NotificationHelper` 发通知 + `playAlarmSound`（通知内容中时间从 `event.reminderTime` 取事件时间）。
 
 ### 周期事件（repeatType != "none"）
-`EventRepository.insert/update` → `RecurringReminderScheduler.scheduleRecurringReminder(event, baseDate)` → 预约未来 N 次，每次独立 requestCode = `(eventId.toInt() << 8) | occurrenceIndex`。每次触发后 `scheduleNextOccurrence` 续约下一轮。
+`EventRepository.insert/update` → `RecurringReminderScheduler.scheduleRecurringReminder(event, baseDate)` → 按 repeatType 分支调度（阳历：daily/weekly/monthly/yearly/workday/weekend；农历：monthly/yearly + useLunar 分支判断）→ 预约未来 N 次，每次独立 requestCode = `(eventId.toInt() << 8) | occurrenceIndex`。每次触发后 `scheduleNextOccurrence` 续约下一轮。
+
+农历排期使用 `LunarCalendar.toLunarParts()` 提取农历月/日，`LunarCalendar.lunarToGregorian()` 将未来农历月/日转为公历日期。
 
 ### 设备重启
 `ReminderBootReceiver` → `RecurringReminderScheduler.rescheduleAllReminders()` 重调度所有事件。

@@ -87,7 +87,7 @@ object LunarCalendar {
      * 公历 → 农历（月 / 日 / 是否闰月）
      * 主路径：android.icu.util.ChineseCalendar
      */
-    private fun toLunarParts(gregorian: Calendar): LunarParts {
+    fun toLunarParts(gregorian: Calendar): LunarParts {
         // 尝试 ICU，失败后 fall back 到本地锚点表
         val fromIcu = kotlin.runCatching { toLunarPartsIcu(gregorian) }.getOrNull()
         if (fromIcu != null) return fromIcu
@@ -233,6 +233,67 @@ object LunarCalendar {
         year: Int, leap: Int, sm: Int, sd: Int, md: List<Int>
     ) {
         add(FallbackYearData(year, leap, sm, sd, md))
+    }
+
+    // ──────────────────────────────────────────────
+    // 农历 → 公历转换（用于农历每月/每年重复排期）
+    // ──────────────────────────────────────────────
+
+    /**
+     * 农历 → 公历日期转换
+     *
+     * @param lunarYear  农历年（如 2026）
+     * @param lunarMonth 农历月（1-based，1=正月）
+     * @param lunarDay   农历日（1-based）
+     * @param isLeapMonth 是否闰月
+     * @return 公历日期字符串 YYYY-MM-DD，失败返回 null
+     */
+    fun lunarToGregorian(lunarYear: Int, lunarMonth: Int, lunarDay: Int, isLeapMonth: Boolean = false): String? {
+        val fromIcu = kotlin.runCatching { lunarToGregorianIcu(lunarYear, lunarMonth, lunarDay, isLeapMonth) }.getOrNull()
+        if (fromIcu != null) return fromIcu
+        return lunarToGregorianFallback(lunarYear, lunarMonth, lunarDay, isLeapMonth)
+    }
+
+    private fun lunarToGregorianIcu(lunarYear: Int, lunarMonth: Int, lunarDay: Int, isLeapMonth: Boolean): String {
+        val cls = Class.forName("android.icu.util.ChineseCalendar")
+        val cc = cls.getDeclaredConstructor().newInstance()
+        cls.getMethod("clear").invoke(cc)
+
+        val extendedYearField = cls.getField("EXTENDED_YEAR").get(null) as Int
+        val monthField = cls.getField("MONTH").get(null) as Int
+        val dayField = cls.getField("DAY_OF_MONTH").get(null) as Int
+        val isLeapField = cls.getField("IS_LEAP_MONTH").get(null) as Int
+
+        cls.getMethod("set", Integer.TYPE, Integer.TYPE).invoke(cc, extendedYearField, lunarYear + 2637)
+        cls.getMethod("set", Integer.TYPE, Integer.TYPE).invoke(cc, monthField, lunarMonth - 1)
+        cls.getMethod("set", Integer.TYPE, Integer.TYPE).invoke(cc, dayField, lunarDay)
+        cls.getMethod("set", Integer.TYPE, Integer.TYPE).invoke(cc, isLeapField, if (isLeapMonth) 1 else 0)
+
+        val timeInMillis = cls.getMethod("getTimeInMillis").invoke(cc) as Long
+        val cal = Calendar.getInstance().apply { this.timeInMillis = timeInMillis }
+        return DateUtils.formatGregorian(cal)
+    }
+
+    private fun lunarToGregorianFallback(lunarYear: Int, lunarMonth: Int, lunarDay: Int, isLeapMonth: Boolean): String? {
+        val yd = FALLBACK_YEAR_DATA.firstOrNull { it.year == lunarYear } ?: return null
+        val months = expandMonthDays(yd)
+        var offset = 0
+        var matched = false
+        for (m in months) {
+            if (m.monthIndex == lunarMonth && m.isLeap == isLeapMonth) {
+                if (lunarDay > m.days) return null
+                offset += lunarDay - 1
+                matched = true
+                break
+            }
+            offset += m.days
+        }
+        if (!matched) return null
+        val springCal = Calendar.getInstance().apply {
+            clear(); set(lunarYear, yd.springMonth - 1, yd.springDay)
+        }
+        springCal.add(Calendar.DAY_OF_MONTH, offset)
+        return DateUtils.formatGregorian(springCal)
     }
 
     /**

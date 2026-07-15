@@ -14,8 +14,10 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
@@ -45,6 +47,8 @@ import com.minirili.app.ui.navigation.Screen
 import com.minirili.app.ui.screens.weather.WeatherCard
 import com.minirili.app.ui.viewmodel.EventViewModel
 import com.minirili.app.utils.DateUtils
+import com.minirili.app.utils.AppLaunchPrefs
+import com.minirili.app.utils.AutoStartHelper
 import com.minirili.app.utils.IcsUtils
 import com.minirili.app.utils.LunarCalendar
 import com.minirili.app.stopAlarmOnEventOpen
@@ -75,6 +79,7 @@ fun CalendarScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showSearchDialog by remember { mutableStateOf(false) }
+    var showAutoStartDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(selectedDate) { viewModel.selectDate(selectedDate) }
 
@@ -89,11 +94,22 @@ fun CalendarScreen(
     }
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> hasNotificationPermission = granted }
+    ) { granted ->
+        hasNotificationPermission = granted
+        // 用户已回应权限对话框，再检查自启动
+        if (AppLaunchPrefs.shouldAskAutoStart(context)) {
+            showAutoStartDialog = true
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
             notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            // Android 12- 或权限已授予，无需弹权限，直接检查自启动
+            if (AppLaunchPrefs.shouldAskAutoStart(context)) {
+                showAutoStartDialog = true
+            }
         }
     }
 
@@ -193,7 +209,6 @@ fun CalendarScreen(
                     DropdownMenu(expanded = expandedMenu, onDismissRequest = { expandedMenu = false }) {
                         listOf(
                             "月视图" to CalendarViewType.MONTH,
-                            "周视图" to CalendarViewType.WEEK,
                             "日视图" to CalendarViewType.DAY,
                             "年视图" to CalendarViewType.YEAR
                         ).forEach { (label, type) ->
@@ -400,7 +415,68 @@ fun CalendarScreen(
                 )
             }
         }
+
+        // 自启动引导：在通知权限请求之后弹出
+        if (showAutoStartDialog) {
+            AutoStartDialog(
+                onDismiss = { showAutoStartDialog = false }
+            )
+        }
     }
+}
+
+@Composable
+private fun AutoStartDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val guide = remember { AutoStartHelper.getManufacturerGuide() }
+    var suppress30d by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("将迷历加入开机后台自启动！") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text("为确保事件闹钟提醒准时触发、桌面插件正常更新，请将 迷历 加入系统权限白名单：")
+                Spacer(Modifier.height(12.dp))
+                Text("⚠️ 开机启动：允许系统开机后自动运行 迷历")
+                Spacer(Modifier.height(4.dp))
+                Text("⚠️ 后台自启动：允许 迷历 在后台常驻运行")
+                Spacer(Modifier.height(12.dp))
+                if (guide != null) {
+                    Text(guide.guideHint)
+                } else {
+                    Text("请进入系统「设置 → 应用管理 → 迷历」，找到「自启动」或「后台管理」并允许。")
+                    Text("不同厂商设置路径不同，可在「手机管家」或「安全中心」中搜索「自启动」相关设置。")
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(
+                        checked = suppress30d,
+                        onCheckedChange = { suppress30d = it }
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("确认后 30 天内不再弹出")
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (suppress30d) {
+                    AppLaunchPrefs.markAllAsked(context)
+                }
+                onDismiss()
+            }) {
+                Text("确认")
+            }
+        }
+    )
 }
 
 // ===== 选择器对话框 =====

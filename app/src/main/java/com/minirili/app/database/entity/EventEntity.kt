@@ -45,10 +45,10 @@ data class EventEntity(
     // 提醒时间（Unix 时间戳）
     val reminderTime: Long = 0,
 
-    // 提醒提前量（秒）
+    // 提醒提前量（分钟）
     val reminderOffset: Int = 0,
 
-    // 重复类型（none/daily/weekly/monthly/yearly/workday/weekend）
+    // 重复类型（none/daily/weekly/monthly/yearly/workday/weekend；农历模式下 monthly/yearly 含"每月(农历)"/"每年(农历)"）
     val repeatType: String = "none",
 
     // 通知方式：通知栏（默认 true）

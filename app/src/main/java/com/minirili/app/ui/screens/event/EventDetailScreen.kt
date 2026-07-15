@@ -222,13 +222,12 @@ fun EventDetailScreen(
     fun buildEvent(): com.minirili.app.database.entity.EventEntity {
         val calendar = DateUtils.parseGregorian(selectedDate)
         val reminderTime: Long = when {
-            isEditing && originalReminderTime > 0L && !forceAllDay -> originalReminderTime
             forceAllDay -> 0L
             else -> {
                 calendar.set(Calendar.HOUR_OF_DAY, eventHour)
                 calendar.set(Calendar.MINUTE, eventMinute)
                 calendar.set(Calendar.SECOND, 0)
-                calendar.timeInMillis - if (!isEditing) (reminderOffset * 60L * 1000L) else 0L
+                calendar.timeInMillis  // 事件时间，偏移在调度时计算
             }
         }
         return com.minirili.app.database.entity.EventEntity(

@@ -45,12 +45,8 @@ import com.minirili.app.ui.navigation.CalendarNavHost
 import com.minirili.app.ui.navigation.Screen
 import com.minirili.app.ui.theme.CalendarTheme
 import com.minirili.app.ui.viewmodel.EventViewModel
-import com.minirili.app.utils.AutoStartHelper
-import com.minirili.app.utils.AppLaunchPrefs
-import com.minirili.app.utils.AutoStartHelper.ManufacturerGuide
 import com.minirili.app.utils.NotificationHelper
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.concurrent.atomic.AtomicBoolean
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -70,17 +66,6 @@ class MainActivity : AppCompatActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController: NavHostController = rememberNavController()
-                    var showAutoStartPrompt by remember { mutableStateOf(false) }
-
-                    // 每次启动检测：30天未提示 → 弹窗引导厂商自启动/开机启动
-                    val autoStartChecked = remember { AtomicBoolean() }
-                    LaunchedEffect(Unit) {
-                        if (autoStartChecked.compareAndSet(false, true)) {
-                            if (AppLaunchPrefs.shouldAskAutoStart(this@MainActivity)) {
-                                showAutoStartPrompt = true
-                            }
-                        }
-                    }
 
                     NotificationRouter(
                         navController,
@@ -90,14 +75,6 @@ class MainActivity : AppCompatActivity() {
                         navigateToAllEvents = intent?.getStringExtra("navigate_to") == "all_events",
                         navigateToDay = intent?.getStringExtra("navigate_to") == "day"
                     )
-
-                    if (showAutoStartPrompt) {
-                        AutoStartDialog(
-                            onDismiss = {
-                                showAutoStartPrompt = false
-                            }
-                        )
-                    }
 
                     CalendarNavHost(
                         navController = navController,
@@ -225,62 +202,4 @@ private fun NotificationRouter(navController: NavHostController, notificationEve
             }
         }
     }
-}
-
-@Composable
-private fun AutoStartDialog(
-    onDismiss: () -> Unit
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val guide = remember { AutoStartHelper.getManufacturerGuide() }
-    var suppress30d by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = {},
-        title = { Text("将迷历加入开机后台自启动！") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    "为确保事件闹钟提醒准时触发、桌面插件正常更新，请将 迷历 加入系统权限白名单："
-                )
-                Spacer(Modifier.height(12.dp))
-                Text("⚠️ 开机启动：允许系统开机后自动运行 迷历")
-                Spacer(Modifier.height(4.dp))
-                Text("⚠️ 后台自启动：允许 迷历 在后台常驻运行")
-                Spacer(Modifier.height(12.dp))
-                if (guide != null) {
-                    Text(guide.guideHint)
-                } else {
-                    Text("请进入系统「设置 → 应用管理 → 迷历」，找到「自启动」或「后台管理」并允许。")
-                    Text("不同厂商设置路径不同，可在「手机管家」或「安全中心」中搜索「自启动」相关设置。")
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Checkbox(
-                        checked = suppress30d,
-                        onCheckedChange = { suppress30d = it }
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("确认后 30 天内不再弹出")
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (suppress30d) {
-                    AppLaunchPrefs.markAllAsked(context)
-                }
-                onDismiss()
-            }) {
-                Text("确认")
-            }
-        }
-    )
 }

@@ -42,7 +42,8 @@ class EventRepository @Inject constructor(
         if (event.repeatType != "none") {
             recurringReminderScheduler.scheduleRecurringReminder(event.copy(id = newId), event.gregorianDate)
         } else if (event.reminderTime > 0) {
-            reminderScheduler.scheduleReminder(newId, event.gregorianDate, event.reminderTime)
+            val triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L
+            reminderScheduler.scheduleReminder(newId, event.gregorianDate, triggerTime)
         }
         CombinedWidgetProvider.refreshWidget(appContext)
     }
@@ -53,7 +54,8 @@ class EventRepository @Inject constructor(
         if (event.repeatType != "none") {
             recurringReminderScheduler.scheduleRecurringReminder(event, event.gregorianDate)
         } else if (event.reminderTime > 0) {
-            reminderScheduler.scheduleReminder(event.id, event.gregorianDate, event.reminderTime)
+            val triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L
+            reminderScheduler.scheduleReminder(event.id, event.gregorianDate, triggerTime)
         }
         CombinedWidgetProvider.refreshWidget(appContext)
     }

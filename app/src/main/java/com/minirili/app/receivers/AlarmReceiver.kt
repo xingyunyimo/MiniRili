@@ -96,8 +96,8 @@ class AlarmReceiver : BroadcastReceiver() {
                             val title = event?.title?.takeIf { it.isNotBlank() } ?: context.appName()
                             val wantNotification = event?.notifyNotification ?: true
                             val wantAlarm = event?.notifyAlarm ?: true
-                            val timeText = if (reminderTime > 0) {
-                                val cal = java.util.Calendar.getInstance().apply { timeInMillis = reminderTime }
+                            val timeText = if (event?.reminderTime != null && event.reminderTime > 0) {
+                                val cal = java.util.Calendar.getInstance().apply { timeInMillis = event.reminderTime }
                                 String.format(
                                     "%02d:%02d",
                                     cal.get(java.util.Calendar.HOUR_OF_DAY),
