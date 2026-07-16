@@ -72,8 +72,6 @@ class CombinedWidgetProvider : AppWidgetProvider() {
                 Log.e(TAG, "static render failed id=$appWidgetId", e)
             }
         }
-        // 启动独立 1 秒时间刷新
-        startTimeTick(appContext)
         // 后台线程做动态渲染（天气网络请求 + Room 查询）
         Thread {
             for (appWidgetId in appWidgetIds) {
@@ -96,7 +94,6 @@ class CombinedWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onDisabled(context: Context) {
-        stopTimeTick()
         stopWeatherHandler()
         cancelWeatherAlarm(context)
         cancelEventCycle()
@@ -147,7 +144,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
 
     // ===== 静态渲染 =====
     private fun buildStaticViews(context: Context, appWidgetId: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
         applyTheme(context, views)
         views.setTextViewText(R.id.widget_date, "")
         views.setTextViewText(R.id.widget_lunar_date, "加载中…")
@@ -167,14 +164,14 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         views.setTextViewText(R.id.widget_city, "")
         views.setTextViewText(R.id.widget_weather_icon, "")
         views.setTextViewText(R.id.widget_temp, "")
-        setTimeText(views, context)
+        setTimeFormat(views, context)
         setClickIntents(context, views, appWidgetId)
         return views
     }
 
     // ===== 动态渲染 =====
     private fun buildDynamicViews(context: Context, appWidgetId: Int): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
         applyTheme(context, views)
 
         runCatching { setTimeSection(views, context) }
@@ -224,7 +221,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         val dow = now.get(Calendar.DAY_OF_WEEK)
         views.setTextViewText(R.id.widget_weekday, DateUtils.getWeekdayFull(dow))
 
-        setTimeText(views, context)
+        setTimeFormat(views, context)
 
         val lunarMonthDay = runCatching { LunarCalendar.getLunarMonthDayName(now) }.getOrDefault("")
         views.setTextViewText(R.id.widget_lunar_date, lunarMonthDay.ifEmpty { "" })
@@ -239,13 +236,16 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    // ===== 时间文本（仅更新时间 HH:mm，轻量） =====
-    private fun setTimeText(views: RemoteViews, context: Context) {
+    // ===== 时间格式（TextClock → 设置格式字符串，无需手动更新时间） =====
+    private fun setTimeFormat(views: RemoteViews, context: Context) {
         val is24h = prefs(context).getBoolean(PREF_24H, true)
-        val now = Calendar.getInstance()
-        val fmt = if (is24h) SimpleDateFormat("HH:mm", Locale.getDefault())
-                  else SimpleDateFormat("h:mm a", Locale.getDefault())
-        views.setTextViewText(R.id.widget_time, fmt.format(now.time))
+        if (is24h) {
+            views.setCharSequence(R.id.widget_time, "setFormat24Hour", "HH:mm")
+            views.setCharSequence(R.id.widget_time, "setFormat12Hour", "HH:mm")
+        } else {
+            views.setCharSequence(R.id.widget_time, "setFormat24Hour", "h:mm a")
+            views.setCharSequence(R.id.widget_time, "setFormat12Hour", "h:mm a")
+        }
     }
 
     // ===== 天气模块 =====
@@ -434,7 +434,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         val p = prefs(context)
         p.edit().putInt(PREF_EVENT_INDEX, p.getInt(PREF_EVENT_INDEX, 0) + 1).apply()
 
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
         setEventsSection(context, views)
         setClickIntents(context, views, 0)
 
@@ -444,49 +444,18 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    /** 时间格式切换 —— 只更新时间文本 */
+    /** 时间格式切换 —— 只更新 TextClock 格式字符串 */
     private fun toggleTimeFormat(context: Context) {
         val p = prefs(context)
         p.edit().putBoolean(PREF_24H, !p.getBoolean(PREF_24H, true)).apply()
 
-        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
-        setTimeText(views, context)
+        val views = RemoteViews(context.packageName, R.layout.combined_widget_4x2)
+        setTimeFormat(views, context)
 
         val am = AppWidgetManager.getInstance(context)
         for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
             am.partiallyUpdateAppWidget(id, views)
         }
-    }
-
-    // ===== 独立时间刷新（1 秒间隔） =====
-    private fun startTimeTick(context: Context) {
-        stopTimeTick()
-        val handler = Handler(context.mainLooper)
-        val runnable = Runnable {
-            runCatching {
-                val views = RemoteViews(context.packageName, R.layout.combined_widget_4x3)
-                setTimeText(views, context)
-                val am = AppWidgetManager.getInstance(context)
-                for (id in am.getAppWidgetIds(ComponentName(context, CombinedWidgetProvider::class.java))) {
-                    am.partiallyUpdateAppWidget(id, views)
-                }
-            }
-            // 续约下一次
-            val currentRunnable = sTimeTickRunnable
-            if (currentRunnable != null) {
-                sTimeTickHandler?.postDelayed(currentRunnable, 1000)
-            }
-        }
-        val tickRunnable = runnable
-        sTimeTickHandler = handler
-        sTimeTickRunnable = tickRunnable
-        handler.post(tickRunnable)
-    }
-
-    private fun stopTimeTick() {
-        sTimeTickRunnable?.let { sTimeTickHandler?.removeCallbacks(it) }
-        sTimeTickRunnable = null
-        sTimeTickHandler = null
     }
 
     // ===== 天气刷新（Handler 兜底，30 分钟间隔） =====
@@ -643,10 +612,6 @@ class CombinedWidgetProvider : AppWidgetProvider() {
         private const val PREF_24H = "time_24h"
         private const val PREF_TRANSPARENT = "bg_transparent"
         private const val PREF_EVENT_INDEX = "event_index"
-
-        /* 时间 1 秒刷新（static 避免实例重建后丢失） */
-        private var sTimeTickHandler: Handler? = null
-        private var sTimeTickRunnable: Runnable? = null
 
         /* 天气 30 分钟刷新（Handler 兜底） */
         private var sWeatherHandler: Handler? = null
