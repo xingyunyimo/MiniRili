@@ -35,6 +35,7 @@ import androidx.navigation.NavController
 import com.minirili.app.ui.viewmodel.EventViewModel
 import com.minirili.app.utils.DateUtils
 import com.minirili.app.utils.LunarCalendar
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 private val BUILTIN_TYPES = listOf("普通", "生日", "纪念日", "工作", "学习")
@@ -111,9 +112,13 @@ fun EventDetailScreen(
     var showDeleteTypeDialog by remember { mutableStateOf<String?>(null) }
     var showDeleteEventDialog by remember { mutableStateOf(false) }
     var showSkipConfirmDialog by remember { mutableStateOf<String?>(null) }
+    var deleteChoice by remember { mutableStateOf("all") } // "this"=仅本次, "all"=全部
+    val contextDate = remember { initDate.takeIf { it.isNotBlank() } ?: selectedDate }
 
     var customTypesVersion by remember { mutableStateOf(0) }
     val allTypes = remember(customTypesVersion) { EventTypeStore.loadAll(context) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(eventId) {
         if (eventId > 0) {
@@ -127,8 +132,8 @@ fun EventDetailScreen(
                 reminderOffset = it.reminderOffset
                 repeatType = it.repeatType
                 skipDates = it.skipDates
-                if (it.reminderTime > 0) {
-                    val c = Calendar.getInstance().apply { timeInMillis = it.reminderTime }
+                if (it.reminderTime != 0L) {
+                    val c = Calendar.getInstance().apply { timeInMillis = kotlin.math.abs(it.reminderTime) }
                     eventHour = c.get(Calendar.HOUR_OF_DAY)
                     eventMinute = c.get(Calendar.MINUTE)
                     originalReminderTime = it.reminderTime
@@ -191,7 +196,15 @@ fun EventDetailScreen(
 
     // 当前事件时间的显示值（编辑模式带提醒时显示原本时间，否则显示真实选择值）
     val displayedTime: Long = when {
-        isEditing && originalReminderTime > 0L -> originalReminderTime
+        isEditing && originalReminderTime != 0L -> {
+            // 用 selectedDate 做日期基准，只从 originalReminderTime 取 hour/minute
+            val baseCal = Calendar.getInstance().apply { timeInMillis = kotlin.math.abs(originalReminderTime) }
+            val c = DateUtils.parseGregorian(selectedDate)
+            c.set(Calendar.HOUR_OF_DAY, baseCal.get(Calendar.HOUR_OF_DAY))
+            c.set(Calendar.MINUTE, baseCal.get(Calendar.MINUTE))
+            c.set(Calendar.SECOND, 0)
+            c.timeInMillis
+        }
         forceAllDay -> 0L
         else -> {
             val c = DateUtils.parseGregorian(selectedDate)
@@ -220,14 +233,20 @@ fun EventDetailScreen(
     }
 
     fun buildEvent(): com.minirili.app.database.entity.EventEntity {
-        val calendar = DateUtils.parseGregorian(selectedDate)
         val reminderTime: Long = when {
             forceAllDay -> 0L
             else -> {
-                calendar.set(Calendar.HOUR_OF_DAY, eventHour)
-                calendar.set(Calendar.MINUTE, eventMinute)
-                calendar.set(Calendar.SECOND, 0)
-                calendar.timeInMillis  // 事件时间，偏移在调度时计算
+                // 使用 2000-01-01 作为基准日期，确保时间戳始终为正（调度器只取 hour/minute）
+                val c = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, 2000)
+                    set(Calendar.MONTH, Calendar.JANUARY)
+                    set(Calendar.DAY_OF_MONTH, 1)
+                    set(Calendar.HOUR_OF_DAY, eventHour)
+                    set(Calendar.MINUTE, eventMinute)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                c.timeInMillis
             }
         }
         return com.minirili.app.database.entity.EventEntity(
@@ -253,6 +272,7 @@ fun EventDetailScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(if (isEditing) "编辑事件" else "新建事件") },
@@ -266,11 +286,16 @@ fun EventDetailScreen(
                         }
                     }
                     TextButton(onClick = {
-                        if (title.text.isNotBlank()) {
-                            val ev = buildEvent()
-                            if (isEditing) viewModel.updateEvent(ev) else viewModel.insertEvent(ev)
-                            navController.popBackStack()
+                        if (title.text.isBlank()) return@TextButton
+                        if (forceAllDay && (notifyNotification || notifyAlarm)) {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("全天事件无法发送通知，请取消全天或关闭通知方式")
+                            }
+                            return@TextButton
                         }
+                        val ev = buildEvent()
+                        if (isEditing) viewModel.updateEvent(ev) else viewModel.insertEvent(ev)
+                        navController.popBackStack()
                     }) { Text("保存", fontWeight = FontWeight.Bold) }
                 }
             )
@@ -685,19 +710,57 @@ fun EventDetailScreen(
 
     // 删除事件
     if (showDeleteEventDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteEventDialog = false },
-            title = { Text("删除事件") },
-            text = { Text("确认删除当前事件？此操作不可恢复。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteEvent(buildEvent())
-                    showDeleteEventDialog = false
-                    navController.popBackStack()
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteEventDialog = false }) { Text("取消") } }
-        )
+        if (repeatType != "none" && eventId > 0) {
+            // 重复事件：选择删除方式
+            AlertDialog(
+                onDismissRequest = { showDeleteEventDialog = false },
+                title = { Text("删除重复事件") },
+                text = {
+                    Column {
+                        Text("该事件为重复事件，请选择删除方式：")
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = deleteChoice == "this",
+                                onClick = { deleteChoice = "this" })
+                            Text("仅删除本次（$contextDate）", modifier = Modifier.clickable { deleteChoice = "this" })
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = deleteChoice == "all",
+                                onClick = { deleteChoice = "all" })
+                            Text("删除全部事件", modifier = Modifier.clickable { deleteChoice = "all" })
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (deleteChoice == "this") {
+                            viewModel.skipOccurrence(eventId, contextDate)
+                        } else {
+                            viewModel.deleteEvent(buildEvent())
+                        }
+                        showDeleteEventDialog = false
+                        navController.popBackStack()
+                    }) { Text("确认", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { showDeleteEventDialog = false }) { Text("取消") } }
+            )
+        } else {
+            // 非重复事件：原样单确认
+            AlertDialog(
+                onDismissRequest = { showDeleteEventDialog = false },
+                title = { Text("删除事件") },
+                text = { Text("确认删除当前事件？此操作不可恢复。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteEvent(buildEvent())
+                        showDeleteEventDialog = false
+                        navController.popBackStack()
+                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { showDeleteEventDialog = false }) { Text("取消") } }
+            )
+        }
     }
 
     // EVT-10: 周期事件跳过确认

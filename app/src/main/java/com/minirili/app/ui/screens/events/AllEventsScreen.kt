@@ -2,6 +2,7 @@ package com.minirili.app.ui.screens.events
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,6 +52,7 @@ fun AllEventsScreen(
 
     var query by remember { mutableStateOf("") }
     var showDeleteTarget by remember { mutableStateOf<EventEntity?>(null) }
+    var deleteChoice by remember { mutableStateOf("all") } // "this"=仅本次, "all"=全部
     var filterCompleted by remember { mutableStateOf<Boolean?>(null) }  // null=全部, true=只看已完成, false=只看未完成
 
     val filtered = remember(allEvents, query, filterCompleted) {
@@ -179,20 +181,15 @@ fun AllEventsScreen(
                                 }
                             }
                         }
-                    }
-                    grouped.forEach { (dateStr, events) ->
-                        item(key = "group-$dateStr") {
-                            Spacer(Modifier.height(2.dp))
-                        }
-                        grouped[dateStr]!!.forEach { ev ->
-                            item(key = "ev-${ev.id}") {
+                        events.forEach { ev ->
+                            item(key = "ev-${ev.id}-${dateStr}") {
                                 EventRow(
                                     event = ev,
                                     onClick = {
                                         stopAlarmOnEventOpen()
-                                        navController.navigate(Screen.EventDetail.createRoute(ev.id))
+                                        navController.navigate(Screen.EventDetail.createRoute(ev.id, ev.gregorianDate))
                                     },
-                                    onLongClick = { showDeleteTarget = ev }
+                                    onLongClick = { showDeleteTarget = ev; deleteChoice = "all" }
                                 )
                             }
                         }
@@ -203,18 +200,55 @@ fun AllEventsScreen(
     }
 
     showDeleteTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { showDeleteTarget = null },
-            title = { Text("删除事件") },
-            text = { Text("确定删除「${target.title}」？此操作不可恢复。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteEvent(target)
-                    showDeleteTarget = null
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteTarget = null }) { Text("取消") } }
-        )
+        if (target.repeatType != "none") {
+            // 重复事件：选择删除方式
+            AlertDialog(
+                onDismissRequest = { showDeleteTarget = null },
+                title = { Text("删除重复事件") },
+                text = {
+                    Column {
+                        Text("该事件为重复事件，请选择删除方式：")
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = deleteChoice == "this",
+                                onClick = { deleteChoice = "this" })
+                            Text("仅删除本次（${target.gregorianDate}）", modifier = Modifier.clickable { deleteChoice = "this" })
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = deleteChoice == "all",
+                                onClick = { deleteChoice = "all" })
+                            Text("删除全部事件", modifier = Modifier.clickable { deleteChoice = "all" })
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (deleteChoice == "this") {
+                            viewModel.skipOccurrence(target.id, target.gregorianDate)
+                        } else {
+                            viewModel.deleteEvent(target)
+                        }
+                        showDeleteTarget = null
+                    }) { Text("确认", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { showDeleteTarget = null }) { Text("取消") } }
+            )
+        } else {
+            // 非重复事件：原样单确认
+            AlertDialog(
+                onDismissRequest = { showDeleteTarget = null },
+                title = { Text("删除事件") },
+                text = { Text("确定删除「${target.title}」？此操作不可恢复。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.deleteEvent(target)
+                        showDeleteTarget = null
+                    }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { showDeleteTarget = null }) { Text("取消") } }
+            )
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 
 轻量离线 Android 农历日历 APP。仓库：`https://github.com/xingyunyimo/MiniRili.git`。
 
-核心功能：万年历（公历+农历+节气，月/日/年视图，周视图已隐藏）、事件与一次性提醒、导入栏+闹钟双通道通知、本地 ICS/JSON 导入导出、搜索、节假日（含调休）、农历（基于 android.icu.util.ChineseCalendar，覆盖 1900-2200）。
+核心功能：万年历（公历+农历+节气，月/日/年视图，周视图已隐藏）、事件与一次性提醒（含延后）、导入栏+闹钟双通道通知、4x2 Widget、本地 ICS/JSON 导入导出、搜索、节假日（含调休）、出行建议、隐私政策页。农历基于 android.icu.util.ChineseCalendar，覆盖 1900-2200。
 
 ## Build & Run
 
@@ -22,12 +22,14 @@ debug APK 输出到 `app/build/outputs/apk/debug/app-debug.apk`。
 | 栈 | 备注 |
 |---|---|
 | Kotlin + Jetpack Compose (Material3) | 全部 UI |
-| Room (KSP) | `events` / `weather_cache` / `cities` 三表 |
+| Room (KSP) | `events` / `weather_cache` / `cities` 三表，version 6 |
 | Hilt 2.55 | 单 `AppModule` |
 | Navigation-Compose | `Screen` sealed class |
-| AlarmManager + BroadcastReceiver | 一次性提醒 |
-| WorkManager | 预留（workers/ReminderWorker.kt） |
+| AlarmManager + BroadcastReceiver | 提醒调度（一次性+周期+延后） |
+| WorkManager | 每日天气通知（`DailyWeatherWorker.kt`） |
 | HttpURLConnection + org.json | 天气数据源请求 |
+| DataStore Preferences | 出行建议偏好设置 |
+| AppWidgetProvider | 4x2 桌面小部件 |
 
 ## 数据层架构
 
@@ -40,10 +42,18 @@ UI (Composable) ── observes ──► EventViewModel (StateFlow)
                  ┌──────────────────┼──────────────────┐
                  ▼                  ▼                  ▼
             EventDao           ReminderScheduler    RecurringReminderScheduler
-            (Room)             (AlarmManager)       (预约未来多次)
+            (Room)             (AlarmManager)       (委托 RecurrenceEngine)
                  │
                  ▼
           EventEntity / CalendarDatabase
+```
+
+重复事件日期计算统一由 `RecurrenceEngine` 负责，`RecurringReminderScheduler` 和日历视图均委托它计算日期：
+
+```
+RecurrenceEngine ─── 唯一日期计算来源
+    ↑ 依赖            ↑ 依赖
+RecurringReminderScheduler    CalendarScreen / ViewModel
 ```
 
 天气子系统：
@@ -65,12 +75,80 @@ WeatherRepository (@Singleton)
                     └─► LocationHelper (LocationManager, 无 play-services 依赖)
 ```
 
-关键约定：
+出行建议子系统（WTH-06）：
+
+```
+DailyWeatherWorker (WorkManager 每日)
+DailyTravelAdviceReceiver (AlarmManager 定时)
+    │
+    ▼
+TravelAdviceEngine (规则引擎：高温/雨雪/大风/AQI)
+    │
+    ▼
+NotificationHelper → 通知栏
+    │
+TravelAdvicePrefs (DataStore：开关 / 推送时间)
+```
+
+Widget 子系统：
+
+```
+CombinedWidgetProvider (AppWidgetProvider, 4x2)
+    │ onUpdate → runBlocking
+    ▼
+CalendarDatabase / HolidayService / LunarCalendar / OpenMeteoApi
+    │
+    ▼
+RemoteViews（农历+公历+节气+天气+事件列表）
+    │
+AlarmManager → 每 30 分钟 tick 刷新
+```
+
+提醒延后（REM-05）：
+
+```
+通知 Action [延后5分/10分/30分]
+    │
+    ▼
+SnoozeReceiver.onReceive
+    │
+    ▼
+ReminderScheduler.scheduleOccurrence(eventId, 0xFE, triggerTime)
+    │
+    ▼
+AlarmManager → AlarmReceiver → 重新发通知
+
+## 关键约定
 - **Repository 包住提醒调度**。所有对事件的增删改都走 `EventRepository`。
 - **`EventEntity.gregorianDate`** 是公历主键格式 `YYYY-MM-DD`。`reminderTime` 是 Unix 毫秒时间戳（事件时间，不含偏移），`reminderOffset` 是偏移量（分钟）。
+- **`reminderTime` 基准日期固定为 2000-01-01**（仅取 hour/minute），避免农历等早于 1970 的日期导致负时间戳。调度器只从中提取 `HOUR_OF_DAY` 和 `MINUTE`。
 - **提醒触发时间** = `reminderTime - reminderOffset * 60 * 1000`（在调度时计算，不在保存时减）。
 - **`EventEntity.useLunar`** 区分农历/阳历事件；重复类型 `"monthly"/"yearly"` 配合 `useLunar` 字段决定是否走农历排期。
+- **`EventEntity.skipDates`** 逗号分隔的 `YYYY-MM-DD` 字符串，标记周期事件中某次不触发，`AlarmReceiver.isOccurrenceSkipped()` 判断。也用于"仅删除本次"功能。
 - **导航**：新增页面 route 必须加进 `Screen` sealed class（`ui/navigation/Screen.kt`），事件详情用 `Screen.EventDetail.createRoute(id)`。
+- **通知方式约束**：全天事件（`forceAllDay == true`）不能同时启用通知栏或闹钟，保存时校验拦截。
+
+## 重复事件展开显示
+
+日历视图（月/周/日）使用 `RecurrenceEngine` 展开重复事件，在重复发生的所有日期上展示：
+
+- `utils/RecurrenceEngine.kt` — 纯日期计算引擎，8 种 repeatType 的展开逻辑
+  - `expandForRange(events, startDate, endDate, excludeSkipDates)` — 返回 `List<EventOccurrence>`
+  - `expandForDate(events, date)` — 单日展开
+- `excludeSkipDates=false` 给调度器用（`skipDates` 由 `AlarmReceiver` 运行时处理）
+- 月视图用 `remember(year, month, allEvents)` 缓存，避免点选日期触发重算
+- AllEventsScreen **不展开**，只显示锚点日期 + 重复标记 `⟳`
+
+### 删除重复事件
+- 重复事件删除时弹出对话框，支持"仅删除本次"（→ `skipOccurrence`）和"删除全部"（→ `deleteEvent`）
+- 非重复事件保持原样单确认
+- 导航传入 `contextDate` 参数，与表单 `selectedDate` 分离，避免误删
+
+## 已知限制
+- **Widget 不显示展开事件**：CombinedWidgetProvider 直接读 DB，不感知展开
+- **moveEventUp/Down 影响所有日期**：同一个 EventEntity 的 sortOrder 全局共享
+- **completed 标记所有日期**：无 per-occurrence 完成状态
+- **AllEventsScreen 不展开**：避免无限展开
 
 ## Android 适配陷阱
 
@@ -85,6 +163,7 @@ WeatherRepository (@Singleton)
 
 - `utils/DateUtils.kt`：公历格式化与解析 (`YYYY-MM-DD`)。
 - `utils/LunarCalendar.kt`：完整农历（干支/生肖/节气/八字），有测试覆盖。
+- `utils/RecurrenceEngine.kt`：重复事件日期计算引擎（8 种 repeatType）。
 - `utils/IcsUtils.kt`：RFC 5545 导入导出。
 - `data/HolidayService.kt` + `HolidayDatabase.kt`：节假日 + 调休。
 
@@ -94,9 +173,11 @@ WeatherRepository (@Singleton)
 事件保存 → `EventRepository.insert/update` → 计算触发时间 `triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L` → `ReminderScheduler.scheduleReminder(eventId, gregorianDate, triggerTime)`（requestCode = `eventId.toInt() << 8`）→ AlarmManager `setAlarmClock(AlarmClockInfo, PendingIntent)` → `AlarmReceiver.onReceive` → `NotificationHelper` 发通知 + `playAlarmSound`（通知内容中时间从 `event.reminderTime` 取事件时间）。
 
 ### 周期事件（repeatType != "none"）
-`EventRepository.insert/update` → `RecurringReminderScheduler.scheduleRecurringReminder(event, baseDate)` → 按 repeatType 分支调度（阳历：daily/weekly/monthly/yearly/workday/weekend；农历：monthly/yearly + useLunar 分支判断）→ 预约未来 N 次，每次独立 requestCode = `(eventId.toInt() << 8) | occurrenceIndex`。每次触发后 `scheduleNextOccurrence` 续约下一轮。
+`EventRepository.insert/update` → `RecurringReminderScheduler.scheduleRecurringReminder(event, baseDate)` → 委托 `RecurrenceEngine.expandForRange()` 计算未来 N 次日期 → 每次独立 requestCode = `(eventId.toInt() << 8) | occurrenceIndex`。每次触发后 `scheduleNextOccurrence` 续约下一轮。
 
-农历排期使用 `LunarCalendar.toLunarParts()` 提取农历月/日，`LunarCalendar.lunarToGregorian()` 将未来农历月/日转为公历日期。
+`RecurrenceEngine` 覆盖 8 种 repeatType：
+- 阳历：daily / weekly / monthly / yearly / workday / weekend
+- 农历：monthly / yearly（配合 `useLunar` 字段，使用 `LunarCalendar.toLunarParts()` + `lunarToGregorian()`）
 
 ### 设备重启
 `ReminderBootReceiver` → `RecurringReminderScheduler.rescheduleAllReminders()` 重调度所有事件。
@@ -104,7 +185,10 @@ WeatherRepository (@Singleton)
 ### 锁屏停闹钟
 `AlarmReceiver.playAlarmSound` 期间动态注册 `ACTION_SCREEN_OFF` 监听（不依赖 Activity），触发即 `stopAlarm()`。30s 超时或 stop 后注销。
 
+### 提醒延后（Snooze）
+通知栏 action 按钮 → `SnoozeReceiver` → `ReminderScheduler.scheduleOccurrence(eventId, 0xFE, newTime)` → AlarmManager 重新触发。延后选项：5/10/30 分钟，requestCode 高位 `0xFE` 标记 snooze 用途。
+
 ## 测试覆盖
 
-- `DateUtilsTest`、`LunarCalendarTest`、`IcsUtilsTest`、`HolidayServiceTest` —— 核心工具。
-- 覆盖：日期往返、农历闰月、ICS 往返解析（含中文转义）、节假日判断。
+- `DateUtilsTest`、`LunarCalendarTest`、`IcsUtilsTest`、`HolidayServiceTest`、`ChineseCityDbTest`、`OccurrenceSkipTest`。
+- 覆盖：日期往返、农历闰月、ICS 往返解析（含中文转义）、节假日判断、城市数据库查询、周期事件跳过。

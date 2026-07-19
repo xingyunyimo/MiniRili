@@ -51,6 +51,7 @@ import com.minirili.app.utils.AppLaunchPrefs
 import com.minirili.app.utils.AutoStartHelper
 import com.minirili.app.utils.IcsUtils
 import com.minirili.app.utils.LunarCalendar
+import com.minirili.app.utils.EventOccurrence
 import com.minirili.app.stopAlarmOnEventOpen
 import java.util.Calendar
 
@@ -257,9 +258,10 @@ fun CalendarScreen(
                         renderMonthView(
                             selectedDate = selectedDate,
                             allEvents = allEvents.value,
+                            viewModel = viewModel,
                             onDateSelect = { selectedDate = it },
                             doubleTapToDayView = { d -> selectedDate = d; viewMode = CalendarViewType.DAY },
-                            eventClick = { id -> stopAlarmOnEventOpen(); navController.navigate(Screen.EventDetail.createRoute(id)) },
+                            eventClick = { id, date -> stopAlarmOnEventOpen(); navController.navigate(Screen.EventDetail.createRoute(id, date)) },
                             onOpenWeatherPage = { navController.navigate(Screen.Weather.route) },
                             onMoveEvent = { id, up ->
                                 if (up) viewModel.moveEventUp(id, selectedDate)
@@ -280,9 +282,10 @@ fun CalendarScreen(
                         renderWeekView(
                             selectedDate = selectedDate,
                             allEvents = allEvents.value,
+                            viewModel = viewModel,
                             onDateSelect = { selectedDate = it },
                             doubleTapToDayView = { d -> selectedDate = d; viewMode = CalendarViewType.DAY },
-                            eventClick = { id -> stopAlarmOnEventOpen(); navController.navigate(Screen.EventDetail.createRoute(id)) },
+                            eventClick = { id, date -> stopAlarmOnEventOpen(); navController.navigate(Screen.EventDetail.createRoute(id, date)) },
                             onOpenWeatherPage = { navController.navigate(Screen.Weather.route) },
                             onMoveEvent = { id, up ->
                                 if (up) viewModel.moveEventUp(id, selectedDate)
@@ -300,8 +303,8 @@ fun CalendarScreen(
                                 onNext = { selectedDate = shiftDays(selectedDate, +1) }
                             )
                     ) {
-                        renderDayView(selectedDate, currentEvents.value, allEvents.value,
-                            onEventClick = { id -> navController.navigate(Screen.EventDetail.createRoute(id)) },
+                        renderDayView(selectedDate, currentEvents.value, allEvents.value, viewModel,
+                            onEventClick = { id, date -> navController.navigate(Screen.EventDetail.createRoute(id, date)) },
                             onOpenWeatherPage = { navController.navigate(Screen.Weather.route) },
                             onMoveEvent = { id, up ->
                                 if (up) viewModel.moveEventUp(id, selectedDate)
@@ -685,8 +688,9 @@ private fun SearchDialog(
 private fun renderMonthView(
     selectedDate: String,
     allEvents: List<com.minirili.app.database.entity.EventEntity>,
+    viewModel: EventViewModel,
     onDateSelect: (String) -> Unit,
-    eventClick: (Long) -> Unit,
+    eventClick: (Long, String) -> Unit,
     doubleTapToDayView: (String) -> Unit,
     onOpenWeatherPage: () -> Unit,
     onMoveEvent: ((Long, Boolean) -> Unit)? = null
@@ -698,11 +702,24 @@ private fun renderMonthView(
     val today = DateUtils.today()
     val firstDayOffset = Calendar.getInstance().apply { set(year, month - 1, 1) }.get(Calendar.DAY_OF_WEEK) - 1
 
+    // 展开重复事件：计算当前月范围（前后扩展覆盖占位格子）
+    val monthStart = String.format("%04d-%02d-01", year, month)
+    val endCal = Calendar.getInstance().apply { set(year, month - 1, daysInMonth) }
+    // 向前扩展 firstDayOffset 天，向后补足到 42 格
+    val rangeStartCal = Calendar.getInstance().apply { set(year, month - 1, 1); add(Calendar.DAY_OF_MONTH, -firstDayOffset) }
+    val rangeEndCal = Calendar.getInstance().apply { set(year, month - 1, daysInMonth) }
+    val totalCells = firstDayOffset + daysInMonth
+    val remaining = (42 - totalCells % 42) % 42
+    rangeEndCal.add(Calendar.DAY_OF_MONTH, remaining)
+    val rangeStart = DateUtils.formatGregorian(rangeStartCal)
+    val rangeEnd = DateUtils.formatGregorian(rangeEndCal)
+
     // 一次性预计算事件分组 + 每个日期的农历/节气，避免每个细胞重复遍历
-    val (eventByDate, cellInfos) = remember(selectedDate, allEvents) {
+    val (eventByDate, cellInfos) = remember(year, month, allEvents) {
+        val expanded = viewModel.expandForRange(allEvents, rangeStart, rangeEnd)
         val mutableMap = mutableMapOf<String, List<com.minirili.app.database.entity.EventEntity>>()
-        for (ev in allEvents) {
-            mutableMap[ev.gregorianDate] = (mutableMap[ev.gregorianDate] ?: emptyList()) + ev
+        for (occ in expanded) {
+            mutableMap[occ.occurrenceDate] = (mutableMap[occ.occurrenceDate] ?: emptyList()) + occ.event
         }
         val infos = (1..daysInMonth).map { day ->
             val c = Calendar.getInstance().apply { set(year, month - 1, day) }
@@ -838,7 +855,7 @@ private fun RowScope.DayCard(
 private fun SelectedDateEventsSection(
     selectedDate: String,
     events: List<com.minirili.app.database.entity.EventEntity>,
-    onEventClick: (Long) -> Unit = {},
+    onEventClick: (Long, String) -> Unit = { _, _ -> },
     onMoveEvent: ((Long, Boolean) -> Unit)? = null  // true=上移, false=下移
 ) {
     val lunarStr = runCatching {
@@ -860,7 +877,7 @@ private fun SelectedDateEventsSection(
             Text("当日暂无记事", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             events.forEachIndexed { index, ev ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onEventClick(ev.id) },
+                Card(Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onEventClick(ev.id, selectedDate) },
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 0.dp, bottom = 0.dp, end = 10.dp),
@@ -945,8 +962,9 @@ private fun formatEventTime(reminderTime: Long): String {
 private fun renderWeekView(
     selectedDate: String,
     allEvents: List<com.minirili.app.database.entity.EventEntity>,
+    viewModel: EventViewModel,
     onDateSelect: (String) -> Unit,
-    eventClick: (Long) -> Unit,
+    eventClick: (Long, String) -> Unit,
     doubleTapToDayView: (String) -> Unit,
     onOpenWeatherPage: () -> Unit,
     onMoveEvent: ((Long, Boolean) -> Unit)? = null
@@ -958,11 +976,15 @@ private fun renderWeekView(
         c.add(Calendar.DAY_OF_MONTH, it)
         DateUtils.formatGregorian(c)
     }
-    val selectedDayEvents = allEvents.filter { it.gregorianDate == selectedDate }
+    val weekStart = weekDates.first()
+    val weekEnd = weekDates.last()
+    val selectedDayEvents = viewModel.expandForDate(allEvents, selectedDate)
+        .map { it.event }
 
-    val eventByDate = remember(selectedDate, allEvents) {
+    val eventByDate = remember(weekStart, weekEnd, allEvents) {
+        val expanded = viewModel.expandForRange(allEvents, weekStart, weekEnd)
         buildMap<String, List<com.minirili.app.database.entity.EventEntity>> {
-            for (ev in allEvents) put(ev.gregorianDate, (get(ev.gregorianDate) ?: emptyList()) + ev)
+            for (occ in expanded) put(occ.occurrenceDate, (get(occ.occurrenceDate) ?: emptyList()) + occ.event)
         }
     }
 
@@ -1034,12 +1056,14 @@ private fun renderDayView(
     selectedDate: String,
     currentEvents: List<com.minirili.app.database.entity.EventEntity>,
     allEvents: List<com.minirili.app.database.entity.EventEntity>,
-    onEventClick: (Long) -> Unit,
+    viewModel: EventViewModel,
+    onEventClick: (Long, String) -> Unit,
     onOpenWeatherPage: () -> Unit,
     onMoveEvent: ((Long, Boolean) -> Unit)? = null
 ) {
-    val events = currentEvents.filter { it.gregorianDate == selectedDate }
-        .ifEmpty { allEvents.filter { it.gregorianDate == selectedDate } }
+    val events = remember(selectedDate, allEvents) {
+        viewModel.expandForDate(allEvents, selectedDate).map { it.event }
+    }
     val lunarText = runCatching {
         LunarCalendar.getLunarMonthDayName(DateUtils.parseGregorian(selectedDate))
     }.getOrDefault("")

@@ -8,6 +8,8 @@ import com.minirili.app.database.entity.EventEntity
 import com.minirili.app.repository.EventRepository
 import com.minirili.app.ui.screens.calendar.JsonUtils
 import com.minirili.app.utils.IcsUtils
+import com.minirili.app.utils.RecurrenceEngine
+import com.minirili.app.utils.EventOccurrence
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -33,6 +35,17 @@ class EventViewModel @Inject constructor(
     fun selectDate(date: String) {
         _selectedDate.value = date
     }
+
+    /** 将事件列表展开到 [startDate, endDate] 范围内（含重复事件展开） */
+    fun expandForRange(
+        events: List<EventEntity>,
+        startDate: String,
+        endDate: String
+    ): List<EventOccurrence> = RecurrenceEngine.expandForRange(events, startDate, endDate)
+
+    /** 展开单日事件 */
+    fun expandForDate(events: List<EventEntity>, date: String): List<EventOccurrence> =
+        RecurrenceEngine.expandForDate(events, date)
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query

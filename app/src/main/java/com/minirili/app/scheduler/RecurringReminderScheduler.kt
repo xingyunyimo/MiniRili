@@ -4,9 +4,8 @@ import android.app.AlarmManager
 import android.content.Context
 import com.minirili.app.database.dao.EventDao
 import com.minirili.app.database.entity.EventEntity
-import com.minirili.app.data.HolidayService
 import com.minirili.app.utils.DateUtils
-import com.minirili.app.utils.LunarCalendar
+import com.minirili.app.utils.RecurrenceEngine
 import kotlinx.coroutines.flow.first
 import java.util.Calendar
 
@@ -36,186 +35,70 @@ class RecurringReminderScheduler(
         }
     }
 
-    private fun scheduleDailyReminder(event: EventEntity, baseDate: Calendar) {
-        val calendar = baseDate.clone() as Calendar
-        for (i in 0..39) {                       // 扩展为 40 天，确保 rolling-window 前有足够缓冲
-            if (i > 0) calendar.add(Calendar.DAY_OF_MONTH, 1)
-            val reminderTime = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-            if (reminderTime <= System.currentTimeMillis()) continue  // 当天已过则跳过
-            reminderScheduler.scheduleOccurrence(event.id, i, DateUtils.formatGregorian(calendar), reminderTime)
+    /** 通用：从引擎获取日期列表，调度闹钟 */
+    private fun scheduleFromEngine(event: EventEntity, baseDate: Calendar, endDate: Calendar) {
+        val baseStr = DateUtils.formatGregorian(baseDate)
+        val endStr = DateUtils.formatGregorian(endDate)
+        val occurrences = RecurrenceEngine.expandForRange(
+            listOf(event), baseStr, endStr, excludeSkipDates = false
+        )
+        occurrences.forEachIndexed { index, occ ->
+            val cal = DateUtils.parseGregorian(occ.occurrenceDate)
+            val triggerTime = calculateReminderTime(cal, event.reminderTime, event.reminderOffset)
+            if (triggerTime > System.currentTimeMillis()) {
+                reminderScheduler.scheduleOccurrence(event.id, index, occ.occurrenceDate, triggerTime)
+            }
         }
+    }
+
+    private fun scheduleDailyReminder(event: EventEntity, baseDate: Calendar) {
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.DAY_OF_MONTH, 39) // 40 days total
+        scheduleFromEngine(event, baseDate, end)
     }
 
     private fun scheduleWeeklyReminder(event: EventEntity, baseDate: Calendar) {
-        val calendar = baseDate.clone() as Calendar
-        // 本周若尚未过提醒时间，先预约本周；之后每周一次 × 11 周
-        var scheduled = 0
-        val first = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-        if (first > System.currentTimeMillis()) {
-            reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), first)
-            scheduled++
-        }
-        for (w in 1..11) {
-            calendar.add(Calendar.WEEK_OF_YEAR, 1)
-            val reminderTime = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-            reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), reminderTime)
-            scheduled++
-        }
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.WEEK_OF_YEAR, 11) // 12 weeks total
+        scheduleFromEngine(event, baseDate, end)
     }
 
     private fun scheduleMonthlyReminder(event: EventEntity, baseDate: Calendar) {
-        val dayOfMonth = baseDate.get(Calendar.DAY_OF_MONTH)
-        val calendar = baseDate.clone() as Calendar
-        var scheduled = 0
-        // 本月同日若尚未过提醒时间，先预约
-        val first = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-        if (first > System.currentTimeMillis()) {
-            reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), first)
-            scheduled++
-        }
-        for (m in 1..11) {
-            calendar.add(Calendar.MONTH, 1)
-            if (calendar.get(Calendar.DAY_OF_MONTH) < dayOfMonth) {
-                calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
-            }
-            val reminderTime = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-            reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), reminderTime)
-            scheduled++
-        }
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.MONTH, 11) // 12 months total
+        scheduleFromEngine(event, baseDate, end)
     }
 
     private fun scheduleYearlyReminder(event: EventEntity, baseDate: Calendar) {
-        val month = baseDate.get(Calendar.MONTH)
-        val dayOfMonth = baseDate.get(Calendar.DAY_OF_MONTH)
-        val calendar = baseDate.clone() as Calendar
-        var scheduled = 0
-        val first = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-        if (first > System.currentTimeMillis()) {
-            reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), first)
-            scheduled++
-        }
-        for (y in 1..9) {
-            calendar.add(Calendar.YEAR, 1)
-            calendar.set(Calendar.MONTH, month)
-            calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
-            val reminderTime = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-            reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), reminderTime)
-            scheduled++
-        }
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.YEAR, 9) // 10 years total
+        scheduleFromEngine(event, baseDate, end)
     }
 
     private fun scheduleLunarMonthlyReminder(event: EventEntity, baseDate: Calendar) {
-        val parts = LunarCalendar.toLunarParts(baseDate)
-        var year = parts.yearBase
-        var month = parts.month
-        val day = parts.day
-        var scheduled = 0
-        val todayStr = DateUtils.formatGregorian(baseDate)
-
-        // 当月
-        var gregDate = LunarCalendar.lunarToGregorian(year, month, day)
-        if (gregDate != null && gregDate >= todayStr) {
-            val cal = DateUtils.parseGregorian(gregDate)
-            val triggerTime = calculateReminderTime(cal, event.reminderTime, event.reminderOffset)
-            if (triggerTime > System.currentTimeMillis()) {
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, gregDate, triggerTime)
-                scheduled++
-            }
-        }
-        // 后续月份：逐月递进，跨年则年份+1
-        var attempts = 0
-        while (scheduled < 12 && attempts < 36) {
-            month++
-            if (month > 12) { month = 1; year++ }
-            attempts++
-            gregDate = LunarCalendar.lunarToGregorian(year, month, day)
-            if (gregDate != null) {
-                val cal = DateUtils.parseGregorian(gregDate)
-                val triggerTime = calculateReminderTime(cal, event.reminderTime, event.reminderOffset)
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, gregDate, triggerTime)
-                scheduled++
-            }
-        }
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.YEAR, 1) // ~12 lunar months
+        scheduleFromEngine(event, baseDate, end)
     }
 
     private fun scheduleLunarYearlyReminder(event: EventEntity, baseDate: Calendar) {
-        val parts = LunarCalendar.toLunarParts(baseDate)
-        val month = parts.month
-        val day = parts.day
-        var year = parts.yearBase
-        var scheduled = 0
-        val todayStr = DateUtils.formatGregorian(baseDate)
-
-        // 当年
-        var gregDate = LunarCalendar.lunarToGregorian(year, month, day)
-        if (gregDate != null && gregDate >= todayStr) {
-            val cal = DateUtils.parseGregorian(gregDate)
-            val triggerTime = calculateReminderTime(cal, event.reminderTime, event.reminderOffset)
-            if (triggerTime > System.currentTimeMillis()) {
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, gregDate, triggerTime)
-                scheduled++
-            }
-        }
-        // 后续年份
-        for (y in 1..9) {
-            year++
-            gregDate = LunarCalendar.lunarToGregorian(year, month, day)
-            if (gregDate != null) {
-                val cal = DateUtils.parseGregorian(gregDate)
-                val triggerTime = calculateReminderTime(cal, event.reminderTime, event.reminderOffset)
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, gregDate, triggerTime)
-                scheduled++
-            }
-        }
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.YEAR, 9) // 10 years total
+        scheduleFromEngine(event, baseDate, end)
     }
 
     private fun scheduleWorkdayReminder(event: EventEntity, baseDate: Calendar) {
-        val calendar = baseDate.clone() as Calendar
-        var scheduled = 0
-        var index = 0
-        // 今天如果是工作日（非节假日 + 非周末，或调休补班日）且未过，也预约
-        val todayStr = DateUtils.formatGregorian(calendar)
-        if (HolidayService.isWorkday(todayStr)) {
-            val first = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-            if (first > System.currentTimeMillis()) {
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, todayStr, first)
-                scheduled++
-            }
-        }
-        while (scheduled < 30 && index < 90) {
-            calendar.add(Calendar.DAY_OF_MONTH, 1)
-            val dateStr = DateUtils.formatGregorian(calendar)
-            if (HolidayService.isWorkday(dateStr)) {
-                val reminderTime = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, dateStr, reminderTime)
-                scheduled++
-            }
-            index++
-        }
+        // 90 days buffer should cover ~30 workdays
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.DAY_OF_MONTH, 90)
+        scheduleFromEngine(event, baseDate, end)
     }
 
     private fun scheduleWeekendReminder(event: EventEntity, baseDate: Calendar) {
-        val calendar = baseDate.clone() as Calendar
-        var scheduled = 0
-        var index = 0
-        val dayOfWeek0 = calendar.get(Calendar.DAY_OF_WEEK)
-        if (dayOfWeek0 == Calendar.SATURDAY || dayOfWeek0 == Calendar.SUNDAY) {
-            val first = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-            if (first > System.currentTimeMillis()) {
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), first)
-                scheduled++
-            }
-        }
-        while (scheduled < 12 && index < 90) {
-            calendar.add(Calendar.DAY_OF_MONTH, 1)
-            val dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
-            if (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY) {
-                val reminderTime = calculateReminderTime(calendar, event.reminderTime, event.reminderOffset)
-                reminderScheduler.scheduleOccurrence(event.id, scheduled, DateUtils.formatGregorian(calendar), reminderTime)
-                scheduled++
-            }
-            index++
-        }
+        // 90 days buffer should cover ~12 weekends
+        val end = baseDate.clone() as Calendar
+        end.add(Calendar.DAY_OF_MONTH, 90)
+        scheduleFromEngine(event, baseDate, end)
     }
 
     /**
@@ -226,8 +109,8 @@ class RecurringReminderScheduler(
      * 全天事件（reminderTime <= 0）fallback 到中午 12:00。
      */
     private fun calculateReminderTime(calendar: Calendar, baseReminderTimeMs: Long, offsetMinutes: Int): Long {
-        if (baseReminderTimeMs > 0) {
-            val baseCal = Calendar.getInstance().apply { timeInMillis = baseReminderTimeMs }
+        if (baseReminderTimeMs != 0L) {
+            val baseCal = Calendar.getInstance().apply { timeInMillis = kotlin.math.abs(baseReminderTimeMs) }
             calendar.set(Calendar.HOUR_OF_DAY, baseCal.get(Calendar.HOUR_OF_DAY))
             calendar.set(Calendar.MINUTE, baseCal.get(Calendar.MINUTE))
         } else {
