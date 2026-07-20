@@ -5,10 +5,12 @@ import com.minirili.app.database.dao.EventDao
 import com.minirili.app.database.entity.EventEntity
 import com.minirili.app.scheduler.RecurringReminderScheduler
 import com.minirili.app.scheduler.ReminderScheduler
+import com.minirili.app.utils.DateUtils
 import com.minirili.app.widgets.CombinedWidgetProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -42,7 +44,10 @@ class EventRepository @Inject constructor(
         if (event.repeatType != "none") {
             recurringReminderScheduler.scheduleRecurringReminder(event.copy(id = newId), event.gregorianDate)
         } else if (event.reminderTime > 0) {
-            val triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L
+            val dateCal = DateUtils.parseGregorian(event.gregorianDate)
+            val triggerTime = recurringReminderScheduler.calculateReminderTime(
+                dateCal, event.reminderTime, event.reminderOffset
+            )
             reminderScheduler.scheduleReminder(newId, event.gregorianDate, triggerTime)
         }
         CombinedWidgetProvider.refreshWidget(appContext)
@@ -54,7 +59,10 @@ class EventRepository @Inject constructor(
         if (event.repeatType != "none") {
             recurringReminderScheduler.scheduleRecurringReminder(event, event.gregorianDate)
         } else if (event.reminderTime > 0) {
-            val triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L
+            val dateCal = DateUtils.parseGregorian(event.gregorianDate)
+            val triggerTime = recurringReminderScheduler.calculateReminderTime(
+                dateCal, event.reminderTime, event.reminderOffset
+            )
             reminderScheduler.scheduleReminder(event.id, event.gregorianDate, triggerTime)
         }
         CombinedWidgetProvider.refreshWidget(appContext)

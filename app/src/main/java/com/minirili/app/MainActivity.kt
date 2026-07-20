@@ -9,7 +9,9 @@ import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,6 +61,14 @@ class MainActivity : AppCompatActivity() {
         createNewEventShortcut()
         val initialNotificationId = notificationEventIdFromIntent(intent)
         setContent {
+            // Android 13+ 必须运行时请求通知权限，否则通知栏静默消失
+            val requestNotificationPermission =
+                rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+            LaunchedEffect(Unit) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    requestNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
             val viewModel: EventViewModel = hiltViewModel()
             CalendarTheme {
                 Surface(

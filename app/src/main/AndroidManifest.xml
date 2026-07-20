@@ -43,23 +43,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Notification Receiver -->
-        <receiver
-            android:name=".receivers.NotificationReceiver"
-            android:enabled="true"
-            android:exported="false" />
-
-        <!-- Boot Receiver -->
-        <receiver
-            android:name=".receivers.BootReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
-
         <!-- Alarm Broadcast Receiver -->
         <receiver
             android:name=".receivers.AlarmReceiver"

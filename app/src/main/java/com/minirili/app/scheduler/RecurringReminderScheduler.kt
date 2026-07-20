@@ -108,7 +108,7 @@ class RecurringReminderScheduler(
      * 应用到 occurrence 日期后，再减去 `offsetMinutes` 得到闹钟触发时刻。
      * 全天事件（reminderTime <= 0）fallback 到中午 12:00。
      */
-    private fun calculateReminderTime(calendar: Calendar, baseReminderTimeMs: Long, offsetMinutes: Int): Long {
+    fun calculateReminderTime(calendar: Calendar, baseReminderTimeMs: Long, offsetMinutes: Int): Long {
         if (baseReminderTimeMs != 0L) {
             val baseCal = Calendar.getInstance().apply { timeInMillis = kotlin.math.abs(baseReminderTimeMs) }
             calendar.set(Calendar.HOUR_OF_DAY, baseCal.get(Calendar.HOUR_OF_DAY))
