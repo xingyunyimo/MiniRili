@@ -64,6 +64,11 @@ WeatherCard / WeatherScreen
     ▼
 WeatherViewModel (@HiltViewModel, 注入 WeatherRepository + LocationHelper)
     │
+    ├─ start() → loadCityAndRefresh() + tryRefreshLocation()
+    │      └─ 定位模式下每 30 分钟轻量刷新位置
+    │      └─ 用户 onPermissionGranted() 或 refreshLocation() 重置间隔
+    ├─ observeCities() Flow → 城市表变化自动切换
+    │
     ▼
 WeatherRepository (@Singleton)
     │
@@ -73,6 +78,10 @@ WeatherRepository (@Singleton)
           └─► OpenMeteoApi (HttpURLConnection + org.json)
                     │
                     └─► LocationHelper (LocationManager, 无 play-services 依赖)
+                            │
+                            ├─ getCurrentCity() — 同步，getLastKnownLocation
+                            ├─ getCurrentCityAsync() — 协程安全
+                            └─ getFreshLocation() — API 30+ 一次被动定位，低版本回退
 ```
 
 出行建议子系统（WTH-06）：
@@ -135,6 +144,7 @@ AlarmManager → AlarmReceiver → 重新发通知
 - `utils/RecurrenceEngine.kt` — 纯日期计算引擎，8 种 repeatType 的展开逻辑
   - `expandForRange(events, startDate, endDate, excludeSkipDates)` — 返回 `List<EventOccurrence>`
   - `expandForDate(events, date)` — 单日展开
+  - 农历每月/每年：向后扫描到 `start` 下限，再向前扫描，传入 `isLeapMonth`
 - `excludeSkipDates=false` 给调度器用（`skipDates` 由 `AlarmReceiver` 运行时处理）
 - 月视图用 `remember(year, month, allEvents)` 缓存，避免点选日期触发重算
 - AllEventsScreen **不展开**，只显示锚点日期 + 重复标记 `⟳`
@@ -190,5 +200,5 @@ AlarmManager → AlarmReceiver → 重新发通知
 
 ## 测试覆盖
 
-- `DateUtilsTest`、`LunarCalendarTest`、`IcsUtilsTest`、`HolidayServiceTest`、`ChineseCityDbTest`、`OccurrenceSkipTest`。
-- 覆盖：日期往返、农历闰月、ICS 往返解析（含中文转义）、节假日判断、城市数据库查询、周期事件跳过。
+- `DateUtilsTest`、`LunarCalendarTest`、`IcsUtilsTest`、`HolidayServiceTest`、`ChineseCityDbTest`、`OccurrenceSkipTest`、`RecurrenceEngineTest`。
+- 覆盖：日期往返、农历闰月、ICS 往返解析（含中文转义）、节假日判断、城市数据库查询、周期事件跳过、农历每月/每年重复展开、skipDates 过滤、混合事件列表。
