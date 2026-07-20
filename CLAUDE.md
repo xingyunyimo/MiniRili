@@ -130,8 +130,8 @@ AlarmManager → AlarmReceiver → 重新发通知
 ## 关键约定
 - **Repository 包住提醒调度**。所有对事件的增删改都走 `EventRepository`。
 - **`EventEntity.gregorianDate`** 是公历主键格式 `YYYY-MM-DD`。`reminderTime` 是 Unix 毫秒时间戳（事件时间，不含偏移），`reminderOffset` 是偏移量（分钟）。
-- **`reminderTime` 基准日期固定为 2000-01-01**（仅取 hour/minute），避免农历等早于 1970 的日期导致负时间戳。调度器只从中提取 `HOUR_OF_DAY` 和 `MINUTE`。
-- **提醒触发时间** = `reminderTime - reminderOffset * 60 * 1000`（在调度时计算，不在保存时减）。
+- **`reminderTime` 基准日期固定为 2000-01-01**（仅取 hour/minute），避免农历等早于 1970 的日期导致负时间戳。调度器只从中提取 `HOUR_OF_DAY` 和 `MINUTE`，套到事件真实日期（`gregorianDate`）上再计算触发时刻。
+- **提醒触发时间** = 以 `gregorianDate` 为日期基准、`reminderTime` 的 hour/minute 为时刻基准，减去 `reminderOffset * 60 * 1000`。由 `RecurringReminderScheduler.calculateReminderTime(calendar, baseReminderTimeMs, offsetMinutes)` 统一计算（一次性与周期事件共用）。
 - **`EventEntity.useLunar`** 区分农历/阳历事件；重复类型 `"monthly"/"yearly"` 配合 `useLunar` 字段决定是否走农历排期。
 - **`EventEntity.skipDates`** 逗号分隔的 `YYYY-MM-DD` 字符串，标记周期事件中某次不触发，`AlarmReceiver.isOccurrenceSkipped()` 判断。也用于"仅删除本次"功能。
 - **导航**：新增页面 route 必须加进 `Screen` sealed class（`ui/navigation/Screen.kt`），事件详情用 `Screen.EventDetail.createRoute(id)`。
@@ -180,7 +180,7 @@ AlarmManager → AlarmReceiver → 重新发通知
 ## 提醒链路
 
 ### 一次性提醒
-事件保存 → `EventRepository.insert/update` → 计算触发时间 `triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L` → `ReminderScheduler.scheduleReminder(eventId, gregorianDate, triggerTime)`（requestCode = `eventId.toInt() << 8`）→ AlarmManager `setAlarmClock(AlarmClockInfo, PendingIntent)` → `AlarmReceiver.onReceive` → `NotificationHelper` 发通知 + `playAlarmSound`（通知内容中时间从 `event.reminderTime` 取事件时间）。
+事件保存 → `EventRepository.insert/update` → 以 `event.gregorianDate` 为日期基准、`event.reminderTime` 的 hour/minute 为时刻基准，减去 `reminderOffset` 得到触发时间 → `ReminderScheduler.scheduleReminder(eventId, gregorianDate, triggerTime)`（requestCode = `eventId.toInt() << 8`）→ AlarmManager `setAlarmClock(AlarmClockInfo, PendingIntent)` → `AlarmReceiver.onReceive` → `NotificationHelper` 发通知 + `playAlarmSound`。触发时间计算复用 `RecurringReminderScheduler.calculateReminderTime()`，与周期事件统一。
 
 ### 周期事件（repeatType != "none"）
 `EventRepository.insert/update` → `RecurringReminderScheduler.scheduleRecurringReminder(event, baseDate)` → 委托 `RecurrenceEngine.expandForRange()` 计算未来 N 次日期 → 每次独立 requestCode = `(eventId.toInt() << 8) | occurrenceIndex`。每次触发后 `scheduleNextOccurrence` 续约下一轮。

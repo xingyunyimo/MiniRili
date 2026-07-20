@@ -20,13 +20,23 @@ out/
 *.hprof
 .claude/
 *.env
+build.log
+widget_error.log
+
+# AI / 个人开发工具配置（不属于项目）
+CLAUDE.md
 
 # 内部开发文件（不公开）
 build_app.bat
 gradle-wrapper-download.md
+scripts
 临时
 开发要求.txt
 快速开始.md
 检查点总结.md
 实现状态总结.md
 项目结构总结.md
+待优化.md
+使用指南与常见问题.md
+需求文档.md
+CLAUDE.md
