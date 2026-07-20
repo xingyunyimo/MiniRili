@@ -46,6 +46,9 @@ class WeatherViewModel @Inject constructor(
 
     private var started = false
 
+    /** 上次尝试定位的时间戳，用于 30 分钟频率限制 */
+    private var lastLocationAttemptMs = 0L
+
     /** 首次进入时拉取城市列表 + 天气。之后自动监听城市列表变化。 */
     fun start() {
         if (started) return
@@ -66,14 +69,53 @@ class WeatherViewModel @Inject constructor(
                 }
             }
         }
+        // 轻量刷新定位：当前处于定位模式时，尝试刷新位置
+        viewModelScope.launch { tryRefreshLocation() }
     }
 
-    /** 用户主动触发"重新定位"。 */
+    /** 用户主动触发"重新定位"。不受 30 分钟间隔限制。 */
     fun refreshLocation() {
         viewModelScope.launch {
             _state.value = WeatherUiState.Loading
+            lastLocationAttemptMs = 0L  // 重置间隔，强制立即定位
             loadDefaultCity(fallback = _cities.value.firstOrNull())
         }
+        CombinedWidgetProvider.refreshWidget(appContext)
+    }
+
+    /**
+     * 定位权限被授予后调用：尝试刷新定位，无间隔限制。
+     * 建议在权限请求回调成功后调用。
+     */
+    fun onPermissionGranted() {
+        viewModelScope.launch {
+            lastLocationAttemptMs = 0L
+            tryRefreshLocation()
+        }
+    }
+
+    /**
+     * 轻量定位刷新：仅在当前为定位模式 + 超过最小间隔时才尝试。
+     * 位置变化时自动切换城市；位置未变则静默跳过。
+     */
+    private suspend fun tryRefreshLocation() {
+        if (!_usingCurrentLocation.value) return
+        val now = System.currentTimeMillis()
+        if (now - lastLocationAttemptMs < LOCATION_MIN_INTERVAL_MS) return
+        lastLocationAttemptMs = now
+
+        val newCity = locationHelper.getCurrentCityAsync() ?: return
+        val current = _currentCity.value ?: return
+        // 位置未变（经纬度差异 < 0.01°）则跳过，避免无意义刷新
+        if (kotlin.math.abs(current.latitude - newCity.latitude) < 0.01 &&
+            kotlin.math.abs(current.longitude - newCity.longitude) < 0.01
+        ) return
+
+        repository.ensureCity(newCity)
+        _cities.value = repository.getCities()
+        _currentCity.value = newCity
+        _usingCurrentLocation.value = true
+        refresh(newCity)
         CombinedWidgetProvider.refreshWidget(appContext)
     }
 
@@ -146,7 +188,7 @@ class WeatherViewModel @Inject constructor(
     }
 
     private suspend fun loadDefaultCity(fallback: City? = null) {
-        val locatedCity = locationHelper.getCurrentCity()
+        val locatedCity = locationHelper.getCurrentCityAsync()
         if (locatedCity != null) {
             repository.ensureCity(locatedCity)
             _cities.value = repository.getCities()
@@ -189,6 +231,9 @@ class WeatherViewModel @Inject constructor(
     }
 
     companion object {
+        /** 两次定位尝试之间的最小间隔（30 分钟） */
+        private const val LOCATION_MIN_INTERVAL_MS = 30L * 60 * 1000L
+
         val DEFAULT_BEIJING = City(
             id = "39.9042,116.4074",
             name = "北京",

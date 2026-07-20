@@ -129,7 +129,7 @@ object LunarCalendar {
         val month = gregorian.get(Calendar.MONTH) + 1
         val day = gregorian.get(Calendar.DAY_OF_MONTH)
 
-        val yd = FALLBACK_YEAR_DATA.firstOrNull { it.year == year } ?: return LunarParts(0, month, day, false)
+        val yd = FALLBACK_YEAR_DATA.firstOrNull { it.year == year } ?: return LunarParts(year, month, day, false)
         val springDate = Calendar.getInstance().apply {
             clear(); set(year, yd.springMonth - 1, yd.springDay)
         }
@@ -137,9 +137,9 @@ object LunarCalendar {
             clear(); set(year, month - 1, day)
         }
         if (today.before(springDate)) {
-            // 用上一年定义
+            // 用上一年定义（农历年 = 公历年 - 1）
             val prev = FALLBACK_YEAR_DATA.firstOrNull { it.year == year - 1 }
-                ?: return LunarParts(0, month, day, false)
+                ?: return LunarParts(year - 1, month, day, false)
             val prevSpring = Calendar.getInstance().apply {
                 clear(); set(prev.year, prev.springMonth - 1, prev.springDay)
             }
@@ -147,22 +147,22 @@ object LunarCalendar {
                 clear(); set(year, month - 1, day)
             }
             val offsetDays = ((todayForPrev.timeInMillis - prevSpring.timeInMillis) / 86_400_000L).toInt()
-            return walkMonthDays(prev, offsetDays)
+            return walkMonthDays(prev, offsetDays, year - 1)
         }
         val offsetDays = ((today.timeInMillis - springDate.timeInMillis) / 86_400_000L).toInt()
-        return walkMonthDays(yd, offsetDays)
+        return walkMonthDays(yd, offsetDays, year)
     }
 
-    private fun walkMonthDays(yd: FallbackYearData, offset: Int): LunarParts {
+    private fun walkMonthDays(yd: FallbackYearData, offset: Int, gregorianYear: Int): LunarParts {
         var rem = offset
         val months = expandMonthDays(yd)
         for ((idx, m) in months.withIndex()) {
             if (rem < m.days) {
-                return LunarParts(0, m.monthIndex, rem + 1, m.isLeap)
+                return LunarParts(gregorianYear, m.monthIndex, rem + 1, m.isLeap)
             }
             rem -= m.days
         }
-        return LunarParts(0, 12, rem.coerceIn(1, 30), false)
+        return LunarParts(gregorianYear, 12, rem.coerceIn(1, 30), false)
     }
 
     private data class ExpandedMonth(val monthIndex: Int, val days: Int, val isLeap: Boolean)

@@ -182,25 +182,43 @@ object RecurrenceEngine {
         val parts = LunarCalendar.toLunarParts(DateUtils.parseGregorian(anchorDateStr))
         val anchorMonth = parts.month
         val anchorDay = parts.day
-
-        // 从锚点年份开始逐月向前找到覆盖 rangeStart 的月份
+        val isLeap = parts.isLeapMonth
         val anchorYear = parts.yearBase
+
         val dates = mutableListOf<String>()
-        var year = anchorYear
-        var month = anchorMonth
+        val startStr = DateUtils.formatGregorian(start)
         val endStr = DateUtils.formatGregorian(end)
 
-        // 先回退到 rangeStart 之前的月份
+        // 1. 从锚点向后扫描，找到第一个 >= startStr 的月份
+        var year = anchorYear
+        var month = anchorMonth
         var attempts = 0
-        while (attempts < 60) {
-            val greg = LunarCalendar.lunarToGregorian(year, month, anchorDay)
-            if (greg != null && greg >= anchorDateStr) {
-                if (greg >= anchorDateStr && greg <= endStr) {
+        val maxBackward = 60
+        while (attempts < maxBackward) {
+            val greg = LunarCalendar.lunarToGregorian(year, month, anchorDay, isLeap)
+            if (greg != null) {
+                if (greg >= startStr) break
+            }
+            // 向后退一个月
+            month--
+            if (month < 1) { month = 12; year-- }
+            attempts++
+        }
+        if (attempts >= maxBackward) {
+            // 没找到，重置到锚点
+            year = anchorYear; month = anchorMonth
+        }
+
+        // 2. 从当前位置向前扫描到 end
+        attempts = 0
+        while (attempts < 120) {
+            val greg = LunarCalendar.lunarToGregorian(year, month, anchorDay, isLeap)
+            if (greg != null) {
+                if (greg in startStr..endStr) {
                     dates.add(greg)
                 }
                 if (greg > endStr) break
             }
-            // 进到下个月
             month++
             if (month > 12) { month = 1; year++ }
             attempts++
@@ -219,20 +237,33 @@ object RecurrenceEngine {
         val parts = LunarCalendar.toLunarParts(DateUtils.parseGregorian(anchorDateStr))
         val anchorMonth = parts.month
         val anchorDay = parts.day
+        val isLeap = parts.isLeapMonth
         val anchorYear = parts.yearBase
 
         val dates = mutableListOf<String>()
+        val startStr = DateUtils.formatGregorian(start)
         val endStr = DateUtils.formatGregorian(end)
+
+        // 1. 从锚点向后扫描到 start
         var year = anchorYear
         var attempts = 0
         while (attempts < 30) {
-            val greg = LunarCalendar.lunarToGregorian(year, anchorMonth, anchorDay)
-            if (greg != null && greg >= anchorDateStr) {
-                if (greg <= endStr) {
+            val greg = LunarCalendar.lunarToGregorian(year, anchorMonth, anchorDay, isLeap)
+            if (greg != null && greg >= startStr) break
+            year--
+            attempts++
+        }
+        if (attempts >= 30) year = anchorYear
+
+        // 2. 向前扫描到 end
+        attempts = 0
+        while (attempts < 60) {
+            val greg = LunarCalendar.lunarToGregorian(year, anchorMonth, anchorDay, isLeap)
+            if (greg != null) {
+                if (greg in startStr..endStr) {
                     dates.add(greg)
-                } else {
-                    break
                 }
+                if (greg > endStr) break
             }
             year++
             attempts++

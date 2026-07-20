@@ -57,6 +57,51 @@ class LocationHelper(private val context: Context) {
         )
     }
 
+    /**
+     * 异步获取当前位置（协程安全）。
+     * API 30+ 使用 [LocationManager.getCurrentLocation] 获取实时位置，
+     * 低版本回退到 [getLastKnownLocation]。
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun getCurrentCityAsync(): City? {
+        if (!hasPermission()) return null
+        val loc = getFreshLocation() ?: return null
+        val name = reverseGeocode(loc.latitude, loc.longitude) ?: "当前位置"
+        return City(
+            id = "current",
+            name = name,
+            latitude = loc.latitude,
+            longitude = loc.longitude,
+            country = null,
+            isCurrentLocation = true
+        )
+    }
+
+    /**
+     * 获取新鲜位置：API 30+ 用 [LocationManager.getCurrentLocation] 做一次被动定位，
+     * 低版本回退到 [getLastKnownLocation]。
+     */
+    @SuppressLint("MissingPermission")
+    private suspend fun getFreshLocation(): Location? {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        if (Build.VERSION.SDK_INT >= 30) {
+            return try {
+                suspendCancellableCoroutine { cont ->
+                    val cs = android.os.CancellationSignal()
+                    cont.invokeOnCancellation { cs.cancel() }
+                    lm.getCurrentLocation(
+                        LocationManager.PASSIVE_PROVIDER,
+                        cs,
+                        ContextCompat.getMainExecutor(context)
+                    ) { location ->
+                        if (!cont.isCompleted) cont.resume(location)
+                    }
+                }
+            } catch (_: Exception) { null }
+        }
+        return getLastKnownLocation()
+    }
+
     @SuppressLint("MissingPermission")
     private fun getLastKnownLocation(): Location? {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
