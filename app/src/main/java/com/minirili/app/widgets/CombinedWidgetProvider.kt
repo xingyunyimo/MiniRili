@@ -26,6 +26,7 @@ import com.minirili.app.data.weather.WeatherRepository
 import com.minirili.app.data.weather.WeatherResult
 import com.minirili.app.utils.DateUtils
 import com.minirili.app.utils.LunarCalendar
+import com.minirili.app.utils.RecurrenceEngine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
@@ -337,9 +338,13 @@ class CombinedWidgetProvider : AppWidgetProvider() {
     // ===== 事件模块（含循环滚动） =====
     private fun setEventsSection(context: Context, views: RemoteViews) {
         val db = CalendarDatabase.getDatabase(context)
+        val today = DateUtils.today()
 
         val todayEvents = try {
-            runBlocking { db.eventDao().getEventsByDate(DateUtils.today()).firstOrNull() ?: emptyList() }
+            runBlocking {
+                val allEvents = db.eventDao().getAllEventsOnce()
+                RecurrenceEngine.expandForDate(allEvents, today).map { it.event }
+            }
         } catch (_: Throwable) { null }
 
         if (todayEvents == null) {

@@ -863,7 +863,14 @@ private fun DateTimePickerDialog(
             }
         },
         confirmButton = { TextButton(onClick = {
-            onConfirm(String.format("%04d-%02d-%02d", year, month, day), hour, minute)
+            val dateStr = if (useLunar) {
+                // 用户输入的是农历年月日，转为公历后再存 gregorianDate
+                LunarCalendar.lunarToGregorian(year, month, day)
+                    ?: String.format("%04d-%02d-%02d", year, month, day) // 转换失败回退
+            } else {
+                String.format("%04d-%02d-%02d", year, month, day)
+            }
+            onConfirm(dateStr, hour, minute)
         }) { Text("确定") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )

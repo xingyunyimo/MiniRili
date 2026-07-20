@@ -70,7 +70,10 @@ class WeatherViewModel @Inject constructor(
 
     /** 用户主动触发"重新定位"。 */
     fun refreshLocation() {
-        loadCityAndRefresh()
+        viewModelScope.launch {
+            _state.value = WeatherUiState.Loading
+            loadDefaultCity(fallback = _cities.value.firstOrNull())
+        }
         CombinedWidgetProvider.refreshWidget(appContext)
     }
 
@@ -142,7 +145,7 @@ class WeatherViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadDefaultCity() {
+    private suspend fun loadDefaultCity(fallback: City? = null) {
         val locatedCity = locationHelper.getCurrentCity()
         if (locatedCity != null) {
             repository.ensureCity(locatedCity)
@@ -153,9 +156,10 @@ class WeatherViewModel @Inject constructor(
             CombinedWidgetProvider.refreshWidget(appContext)
             return
         }
-        _currentCity.value = DEFAULT_BEIJING
+        val city = fallback ?: DEFAULT_BEIJING
+        _currentCity.value = city
         _usingCurrentLocation.value = false
-        refresh(DEFAULT_BEIJING)
+        refresh(city)
     }
 
     fun refresh(city: City? = null) {
