@@ -1277,6 +1277,7 @@ object JsonUtils {
             sb.appendLine("    \"reminderOffset\": ${event.reminderOffset},")
             sb.appendLine("    \"repeatType\": \"${event.repeatType}\",")
             sb.appendLine("    \"skipDates\": \"${event.skipDates}\",")
+            sb.appendLine("    \"skipReminderDates\": \"${event.skipReminderDates}\",")
             sb.appendLine("    \"notifyNotification\": ${event.notifyNotification},")
             sb.appendLine("    \"notifyAlarm\": ${event.notifyAlarm},")
             sb.appendLine("    \"sortOrder\": ${event.sortOrder},")
@@ -1332,6 +1333,7 @@ object JsonUtils {
         reminderOffset = map["reminderOffset"]?.toIntOrNull() ?: 0,
         repeatType = map["repeatType"] ?: "none",
         skipDates = map["skipDates"] ?: "",
+        skipReminderDates = map["skipReminderDates"] ?: "",
         notifyNotification = map["notifyNotification"]?.toBoolean() ?: true,
         notifyAlarm = map["notifyAlarm"]?.toBoolean() ?: true,
         sortOrder = map["sortOrder"]?.toLongOrNull() ?: 0L,

@@ -86,6 +86,13 @@ class EventViewModel @Inject constructor(
         }
     }
 
+    /** 周期事件仅跳过指定日期的提醒，事件仍展示 */
+    fun skipReminderOnly(eventId: Long, date: String) {
+        viewModelScope.launch {
+            repository.skipReminderOnly(eventId, date)
+        }
+    }
+
     fun setCompleted(eventId: Long, completed: Boolean) {
         viewModelScope.launch {
             repository.setCompleted(eventId, completed)

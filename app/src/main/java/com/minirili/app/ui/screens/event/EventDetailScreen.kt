@@ -487,16 +487,16 @@ fun EventDetailScreen(
                 }
             }
 
-            // ========== 周期事件：跳过今天 ==========
+            // ========== 周期事件：跳过选中日期 ==========
             if (repeatType != "none" && eventId > 0) {
-                val today = DateUtils.today()
+                val skipDate = contextDate.takeIf { it.isNotBlank() } ?: selectedDate
                 OutlinedButton(
-                    onClick = { showSkipConfirmDialog = today },
+                    onClick = { showSkipConfirmDialog = skipDate },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.EventBusy, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("跳过今天（$today）的提醒")
+                    Text("跳过当天（$skipDate）的提醒")
                 }
             }
 
@@ -763,12 +763,13 @@ fun EventDetailScreen(
     showSkipConfirmDialog?.let { targetDate ->
         AlertDialog(
             onDismissRequest = { showSkipConfirmDialog = null },
-            title = { Text("跳过今天提醒") },
+            title = { Text("跳过当天提醒") },
             text = { Text("已跳过 $targetDate 的提醒。后续周期触发不受影响。") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.skipOccurrence(eventId, targetDate)
+                    viewModel.skipReminderOnly(eventId, targetDate)
                     showSkipConfirmDialog = null
+                    onBack()
                 }) { Text("确认跳过") }
             },
             dismissButton = { TextButton(onClick = { showSkipConfirmDialog = null }) { Text("取消") } }

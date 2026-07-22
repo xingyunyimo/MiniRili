@@ -60,6 +60,9 @@ data class EventEntity(
     // 周期事件例外的触发日期集合（逗号分隔的公历日期 YYYY-MM-DD）。闹钟触发时命中则跳过，不影响后续 resume
     val skipDates: String = "",
 
+    // 周期事件仅跳过提醒的日期集合（逗号分隔的公历日期 YYYY-MM-DD）。事件仍展示，闹钟触发时静默跳过
+    val skipReminderDates: String = "",
+
     // 排序顺序（UI-04 拖拽排序，值越小越靠前）
     val sortOrder: Long = 0L,
 

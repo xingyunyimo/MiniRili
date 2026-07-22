@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.minirili.app.database.dao.CityDao
 import com.minirili.app.database.dao.EventDao
 import com.minirili.app.database.dao.WeatherCacheDao
@@ -13,7 +15,7 @@ import com.minirili.app.database.entity.WeatherCacheEntity
 
 @Database(
     entities = [EventEntity::class, WeatherCacheEntity::class, CityEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class CalendarDatabase : RoomDatabase() {
@@ -26,6 +28,10 @@ abstract class CalendarDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: CalendarDatabase? = null
 
+        val MIGRATION_6_7 = Migration(6, 7) { db ->
+            db.execSQL("ALTER TABLE events ADD COLUMN skipReminderDates TEXT NOT NULL DEFAULT ''")
+        }
+
         fun getDatabase(context: Context): CalendarDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -33,7 +39,8 @@ abstract class CalendarDatabase : RoomDatabase() {
                     CalendarDatabase::class.java,
                     "calendar_database"
                 )
-                    .fallbackToDestructiveMigration() // MVP 阶段允许破坏性迁移
+                    .addMigrations(MIGRATION_6_7)
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

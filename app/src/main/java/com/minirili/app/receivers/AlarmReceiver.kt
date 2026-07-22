@@ -64,13 +64,14 @@ class AlarmReceiver : BroadcastReceiver() {
             screenOffReceiverRegistered = false
         }
 
-        /** EVT-10: 闹钟触发时调用，判断本次触发是否被用户跳到（触发日期在 event.skipDates 中） */
+        /** EVT-10: 闹钟触发时调用，判断本次触发是否被用户跳过（触发日期在 event.skipDates 或 event.skipReminderDates 中） */
         fun isOccurrenceSkipped(event: com.minirili.app.database.entity.EventEntity?, eventDateStr: String): Boolean {
-            if (event == null || event.skipDates.isBlank()) return false
+            if (event == null) return false
             val normalized = eventDateStr.trim()
             if (normalized.isEmpty()) return false
-            val skipped = event.skipDates.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-            return skipped.contains(normalized)
+            val allSkipped = (event.skipDates + "," + event.skipReminderDates)
+                .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            return allSkipped.contains(normalized)
         }
     }
 

@@ -89,6 +89,7 @@ fun CalendarNavHost(
                 eventId = eventId,
                 viewModel = viewModel,
                 navController = navController,
+                onBack = { navController.popBackStack() },
                 initDate = initDate
             )
         }

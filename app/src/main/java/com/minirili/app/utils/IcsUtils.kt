@@ -64,6 +64,7 @@ X-WR-TIMEZONE:Asia/Shanghai
             writeXProp(sb, "X-MINIRILI-LUNARDATE", event.lunarDate)
             writeXProp(sb, "X-MINIRILI-USELUNAR", event.useLunar.toString())
             writeXProp(sb, "X-MINIRILI-SKIPDATES", event.skipDates)
+            writeXProp(sb, "X-MINIRILI-SKIPREMINDERDATES", event.skipReminderDates)
             writeXProp(sb, "X-MINIRILI-NOTIFYNOTIFICATION", event.notifyNotification.toString())
             writeXProp(sb, "X-MINIRILI-NOTIFYALARM", event.notifyAlarm.toString())
             writeXProp(sb, "X-MINIRILI-CREATEDAT", event.createdAt.toString())
@@ -215,6 +216,7 @@ X-WR-TIMEZONE:Asia/Shanghai
             lunarDate = data["X-MINIRILI-LUNARDATE"] ?: "",
             useLunar = data["X-MINIRILI-USELUNAR"]?.toBoolean() ?: false,
             skipDates = data["X-MINIRILI-SKIPDATES"] ?: "",
+            skipReminderDates = data["X-MINIRILI-SKIPREMINDERDATES"] ?: "",
             notifyNotification = data["X-MINIRILI-NOTIFYNOTIFICATION"]?.toBoolean() ?: true,
             notifyAlarm = data["X-MINIRILI-NOTIFYALARM"]?.toBoolean() ?: true,
             createdAt = data["X-MINIRILI-CREATEDAT"]?.toLongOrNull() ?: System.currentTimeMillis(),

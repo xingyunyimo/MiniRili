@@ -22,7 +22,7 @@ debug APK 输出到 `app/build/outputs/apk/debug/app-debug.apk`。
 | 栈 | 备注 |
 |---|---|
 | Kotlin + Jetpack Compose (Material3) | 全部 UI |
-| Room (KSP) | `events` / `weather_cache` / `cities` 三表，version 6 |
+| Room (KSP) | `events` / `weather_cache` / `cities` 三表，version 7 |
 | Hilt 2.55 | 单 `AppModule` |
 | Navigation-Compose | `Screen` sealed class |
 | AlarmManager + BroadcastReceiver | 提醒调度（一次性+周期+延后） |
@@ -134,7 +134,8 @@ AlarmManager → AlarmReceiver → 重新发通知
 - **`reminderTime` 基准日期固定为 2000-01-01**（仅取 hour/minute），避免农历等早于 1970 的日期导致负时间戳。调度器只从中提取 `HOUR_OF_DAY` 和 `MINUTE`，套到事件真实日期（`gregorianDate`）上再计算触发时刻。
 - **提醒触发时间** = 以 `gregorianDate` 为日期基准、`reminderTime` 的 hour/minute 为时刻基准，减去 `reminderOffset * 60 * 1000`。由 `RecurringReminderScheduler.calculateReminderTime(calendar, baseReminderTimeMs, offsetMinutes)` 统一计算（一次性与周期事件共用）。
 - **`EventEntity.useLunar`** 区分农历/阳历事件；重复类型 `"monthly"/"yearly"` 配合 `useLunar` 字段决定是否走农历排期。
-- **`EventEntity.skipDates`** 逗号分隔的 `YYYY-MM-DD` 字符串，标记周期事件中某次不触发，`AlarmReceiver.isOccurrenceSkipped()` 判断。也用于"仅删除本次"功能。
+- **`EventEntity.skipDates`** 逗号分隔的 `YYYY-MM-DD` 字符串，标记周期事件中某次不触发（不展示+不提醒），`AlarmReceiver.isOccurrenceSkipped()` 判断。也用于"仅删除本次"功能。
+- **`EventEntity.skipReminderDates`** 逗号分隔的 `YYYY-MM-DD` 字符串，标记周期事件中仅跳过提醒（事件仍展示，不响闹钟/通知）。与 `skipDates` 独立，两者均被 `AlarmReceiver.isOccurrenceSkipped()` 检查。
 - **导航**：新增页面 route 必须加进 `Screen` sealed class（`ui/navigation/Screen.kt`），事件详情用 `Screen.EventDetail.createRoute(id)`。
 - **通知方式约束**：全天事件（`forceAllDay == true`）不能同时启用通知栏或闹钟，保存时校验拦截。
 
@@ -146,12 +147,13 @@ AlarmManager → AlarmReceiver → 重新发通知
   - `expandForRange(events, startDate, endDate, excludeSkipDates)` — 返回 `List<EventOccurrence>`
   - `expandForDate(events, date)` — 单日展开
   - 农历每月/每年：向后扫描到 `start` 下限，再向前扫描，传入 `isLeapMonth`
-- `excludeSkipDates=false` 给调度器用（`skipDates` 由 `AlarmReceiver` 运行时处理）
+- `excludeSkipDates=false` 给调度器用（`skipDates`/`skipReminderDates` 由 `AlarmReceiver` 运行时处理）
 - 月视图用 `remember(year, month, allEvents)` 缓存，避免点选日期触发重算
 - AllEventsScreen **不展开**，只显示锚点日期 + 重复标记 `⟳`
 
-### 删除重复事件
+### 删除与跳过重复事件
 - 重复事件删除时弹出对话框，支持"仅删除本次"（→ `skipOccurrence`）和"删除全部"（→ `deleteEvent`）
+- 重复事件详情页有"跳过当天"按钮（→ `skipReminderOnly`），仅跳过选中日期的提醒，事件仍展示，确认后返回上一页
 - 非重复事件保持原样单确认
 - 导航传入 `contextDate` 参数，与表单 `selectedDate` 分离，避免误删
 
