@@ -10,5 +10,4 @@ sealed class Screen(val route: String) {
         fun createRoute(eventId: Long = 0, date: String = "") = "event/$eventId?date=$date"
     }
     object PrivacyPolicy : Screen("privacy")
-    object Settings : Screen("settings")
 }
