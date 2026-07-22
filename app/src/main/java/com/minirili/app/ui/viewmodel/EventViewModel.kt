@@ -93,6 +93,13 @@ class EventViewModel @Inject constructor(
         }
     }
 
+    /** 恢复某天提醒（从 skipReminderDates 中移除日期） */
+    fun restoreReminderOnly(eventId: Long, date: String) {
+        viewModelScope.launch {
+            repository.restoreReminderOnly(eventId, date)
+        }
+    }
+
     fun setCompleted(eventId: Long, completed: Boolean) {
         viewModelScope.launch {
             repository.setCompleted(eventId, completed)

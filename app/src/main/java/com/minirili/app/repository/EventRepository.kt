@@ -100,6 +100,19 @@ class EventRepository @Inject constructor(
         CombinedWidgetProvider.refreshWidget(appContext)
     }
 
+    /** 恢复某天提醒（从 skipReminderDates 中移除日期） */
+    suspend fun restoreReminderOnly(eventId: Long, date: String) {
+        val event = eventDao.getEventById(eventId) ?: return
+        val normalized = date.trim()
+        if (normalized.isEmpty()) return
+        val current = event.skipReminderDates.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+        if (normalized in current) {
+            current.remove(normalized)
+            eventDao.update(event.copy(skipReminderDates = current.joinToString(",")))
+        }
+        CombinedWidgetProvider.refreshWidget(appContext)
+    }
+
     // P2-SCH-01 搜索
     fun searchEvents(query: String): Flow<List<EventEntity>> =
         eventDao.searchEvents("%$query%")

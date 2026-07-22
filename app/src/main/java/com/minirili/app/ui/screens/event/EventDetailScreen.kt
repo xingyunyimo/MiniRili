@@ -95,6 +95,7 @@ fun EventDetailScreen(
     var forceAllDay by remember { mutableStateOf(false) }
     var originalReminderTime by remember { mutableStateOf(0L) }
     var skipDates by remember { mutableStateOf("") }
+    var skipReminderDatesState by remember { mutableStateOf("") }
     var notifyNotification by remember { mutableStateOf(true) }
     var notifyAlarm by remember { mutableStateOf(true) }
     var tagsText by remember { mutableStateOf("") }
@@ -132,6 +133,7 @@ fun EventDetailScreen(
                 reminderOffset = it.reminderOffset
                 repeatType = it.repeatType
                 skipDates = it.skipDates
+                skipReminderDatesState = it.skipReminderDates
                 if (it.reminderTime != 0L) {
                     val c = Calendar.getInstance().apply { timeInMillis = kotlin.math.abs(it.reminderTime) }
                     eventHour = c.get(Calendar.HOUR_OF_DAY)
@@ -265,6 +267,7 @@ fun EventDetailScreen(
             notifyNotification = notifyNotification,
             notifyAlarm = notifyAlarm,
             skipDates = skipDates,
+            skipReminderDates = skipReminderDatesState,
             priority = eventPriority,
             completed = eventCompleted,
             attachments = attachmentsJson
@@ -519,6 +522,32 @@ fun EventDetailScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = notifyAlarm, onCheckedChange = { notifyAlarm = it })
                             Text("闹钟", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    // 当天提醒已跳过时显示提示
+                    val skipDateList = skipReminderDatesState.split(",")
+                        .map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+                    if (eventId > 0 && contextDate in skipDateList) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "当天提醒已跳过",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = {
+                                    viewModel.restoreReminderOnly(eventId, contextDate)
+                                    val dates = skipReminderDatesState.split(",")
+                                        .map { it.trim() }.filter { it.isNotEmpty() }
+                                        .filter { it != contextDate }
+                                    skipReminderDatesState = dates.joinToString(",")
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("恢复提醒", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }

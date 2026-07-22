@@ -154,6 +154,7 @@ AlarmManager → AlarmReceiver → 重新发通知
 ### 删除与跳过重复事件
 - 重复事件删除时弹出对话框，支持"仅删除本次"（→ `skipOccurrence`）和"删除全部"（→ `deleteEvent`）
 - 重复事件详情页有"跳过当天"按钮（→ `skipReminderOnly`），仅跳过选中日期的提醒，事件仍展示，确认后返回上一页
+- 通知方式卡片底部显示"当天提醒已跳过"提示 + "恢复提醒"按钮（→ `restoreReminderOnly`），立即从 `skipReminderDates` 移除该日期
 - 非重复事件保持原样单确认
 - 导航传入 `contextDate` 参数，与表单 `selectedDate` 分离，避免误删
 
