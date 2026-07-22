@@ -487,20 +487,16 @@ fun EventDetailScreen(
                 }
             }
 
-            // ========== 周期事件：跳过明天 ==========
+            // ========== 周期事件：跳过今天 ==========
             if (repeatType != "none" && eventId > 0) {
-                val tomorrow = remember(selectedDate) {
-                    val c = DateUtils.parseGregorian(DateUtils.today())
-                    c.add(Calendar.DAY_OF_MONTH, 1)
-                    DateUtils.formatGregorian(c)
-                }
+                val today = DateUtils.today()
                 OutlinedButton(
-                    onClick = { showSkipConfirmDialog = tomorrow },
+                    onClick = { showSkipConfirmDialog = today },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.EventBusy, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("跳过明天（$tomorrow）的提醒")
+                    Text("跳过今天（$today）的提醒")
                 }
             }
 
@@ -767,7 +763,7 @@ fun EventDetailScreen(
     showSkipConfirmDialog?.let { targetDate ->
         AlertDialog(
             onDismissRequest = { showSkipConfirmDialog = null },
-            title = { Text("跳过明天提醒") },
+            title = { Text("跳过今天提醒") },
             text = { Text("已跳过 $targetDate 的提醒。后续周期触发不受影响。") },
             confirmButton = {
                 TextButton(onClick = {

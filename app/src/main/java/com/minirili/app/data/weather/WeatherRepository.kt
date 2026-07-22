@@ -103,6 +103,11 @@ class WeatherRepository @Inject constructor(
         } catch (_: Exception) { null }
     }
 
+    /** 清除所有天气缓存。定位更新后调用，强制下次请求走网络拉取。 */
+    suspend fun clearWeatherCache() {
+        weatherCacheDao.clearAll()
+    }
+
     // ===== 解析 =====
 
     private fun parse(raw: RawWeatherResponse, city: City): WeatherData {
@@ -187,7 +192,7 @@ class WeatherRepository @Inject constructor(
         return obj.toString()
     }
 
-    private fun cacheKey(city: City, today: String) = "${city.id}|$today"
+    private fun cacheKey(city: City, today: String) = "${city.latitude},${city.longitude}|$today"
 
     private fun emptyJsonArray() = org.json.JSONArray()
 

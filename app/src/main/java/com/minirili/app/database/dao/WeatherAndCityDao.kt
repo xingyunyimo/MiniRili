@@ -17,6 +17,9 @@ interface WeatherCacheDao {
 
     @Query("DELETE FROM weather_cache WHERE fetchedAt < :olderThan")
     suspend fun evict(olderThan: Long)
+
+    @Query("DELETE FROM weather_cache")
+    suspend fun clearAll()
 }
 
 @Dao

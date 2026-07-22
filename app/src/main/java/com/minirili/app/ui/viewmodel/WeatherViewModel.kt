@@ -112,6 +112,7 @@ class WeatherViewModel @Inject constructor(
         ) return
 
         repository.ensureCity(newCity)
+        repository.clearWeatherCache()
         _cities.value = repository.getCities()
         _currentCity.value = newCity
         _usingCurrentLocation.value = true
@@ -191,6 +192,7 @@ class WeatherViewModel @Inject constructor(
         val locatedCity = locationHelper.getCurrentCityAsync()
         if (locatedCity != null) {
             repository.ensureCity(locatedCity)
+            repository.clearWeatherCache()
             _cities.value = repository.getCities()
             _currentCity.value = locatedCity
             _usingCurrentLocation.value = true

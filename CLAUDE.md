@@ -72,7 +72,8 @@ WeatherViewModel (@HiltViewModel, 注入 WeatherRepository + LocationHelper)
     ▼
 WeatherRepository (@Singleton)
     │
-    ├─► WeatherCacheDao (Room, 30 分钟缓存, key="cityId|today")
+    ├─► WeatherCacheDao (Room, 30 分钟缓存, key="${lat},${lon}|today")
+    │      └─ 定位更新后 clearAll() 强制走网络
     ├─► CityDao (Room, 多城市管理)
     └─► WeatherDataSource (接口)
           └─► OpenMeteoApi (HttpURLConnection + org.json)

@@ -189,29 +189,16 @@ object RecurrenceEngine {
         val startStr = DateUtils.formatGregorian(start)
         val endStr = DateUtils.formatGregorian(end)
 
-        // 1. 从锚点向后扫描，找到第一个 >= startStr 的月份
-        var year = anchorYear
-        var month = anchorMonth
-        var attempts = 0
-        val maxBackward = 60
-        while (attempts < maxBackward) {
-            val greg = LunarCalendar.lunarToGregorian(year, month, anchorDay, isLeap)
-            if (greg != null) {
-                if (greg >= startStr) break
-            }
-            // 向后退一个月
-            month--
-            if (month < 1) { month = 12; year-- }
-            attempts++
-        }
-        if (attempts >= maxBackward) {
-            // 没找到，重置到锚点
-            year = anchorYear; month = anchorMonth
-        }
+        val startYear = start.get(Calendar.YEAR)
+        val endYear = end.get(Calendar.YEAR)
 
-        // 2. 从当前位置向前扫描到 end
-        attempts = 0
-        while (attempts < 120) {
+        // 从 startYear 前 2 年开始向前扫描，确保覆盖远早于查询范围的锚点
+        var year = (startYear - 2).coerceAtLeast(anchorYear)
+        var month = anchorMonth
+        val maxForward = ((endYear - year + 3) * 12 + 6).coerceAtLeast(60)
+
+        var attempts = 0
+        while (attempts < maxForward) {
             val greg = LunarCalendar.lunarToGregorian(year, month, anchorDay, isLeap)
             if (greg != null) {
                 if (greg in startStr..endStr) {
@@ -244,20 +231,15 @@ object RecurrenceEngine {
         val startStr = DateUtils.formatGregorian(start)
         val endStr = DateUtils.formatGregorian(end)
 
-        // 1. 从锚点向后扫描到 start
-        var year = anchorYear
-        var attempts = 0
-        while (attempts < 30) {
-            val greg = LunarCalendar.lunarToGregorian(year, anchorMonth, anchorDay, isLeap)
-            if (greg != null && greg >= startStr) break
-            year--
-            attempts++
-        }
-        if (attempts >= 30) year = anchorYear
+        val startYear = start.get(Calendar.YEAR)
+        val endYear = end.get(Calendar.YEAR)
 
-        // 2. 向前扫描到 end
-        attempts = 0
-        while (attempts < 60) {
+        // 从 startYear 前 2 年开始向前扫描，确保覆盖
+        var year = (startYear - 2).coerceAtLeast(anchorYear)
+        val maxForward = (endYear - year + 5).coerceAtLeast(60)
+
+        var attempts = 0
+        while (attempts < maxForward) {
             val greg = LunarCalendar.lunarToGregorian(year, anchorMonth, anchorDay, isLeap)
             if (greg != null) {
                 if (greg in startStr..endStr) {
