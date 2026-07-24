@@ -94,9 +94,14 @@ class AlarmReceiver : BroadcastReceiver() {
                         try {
                             val db = CalendarDatabase.getDatabase(context)
                             val event = db.eventDao().getEventById(eventId)
-                            val title = event?.title?.takeIf { it.isNotBlank() } ?: context.appName()
-                            val wantNotification = event?.notifyNotification ?: true
-                            val wantAlarm = event?.notifyAlarm ?: true
+                            // 事件已删除 → 取消提醒的兜底：不弹通知/闹钟
+                            if (event == null) {
+                                releaseWakeLock()
+                                return@launch
+                            }
+                            val title = event.title.takeIf { it.isNotBlank() } ?: context.appName()
+                            val wantNotification = event.notifyNotification
+                            val wantAlarm = event.notifyAlarm
                             val timeText = if (event?.reminderTime != null && event.reminderTime > 0) {
                                 val cal = java.util.Calendar.getInstance().apply { timeInMillis = event.reminderTime }
                                 String.format(

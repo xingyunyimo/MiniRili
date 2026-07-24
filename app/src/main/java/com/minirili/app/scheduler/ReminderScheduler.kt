@@ -78,10 +78,19 @@ class ReminderScheduler(
 
     /** 取消指定事件所有已预约的提醒（含一次性 + 所有 occurrence）。跨实例有效。 */
     fun cancelReminder(eventId: Long) {
+        // 从 in-memory map 中取已登记的 code（仅存活于当前进程生命周期）
         val codes = synchronized(scheduledCodes) {
             scheduledCodes.remove(eventId)?.toSet() ?: emptySet()
         }
         codes.forEach { cancelRequest(it) }
+
+        // 兜底：进程重启后 scheduledCodes 为空，但 AlarmManager 中残留的 PendingIntent 仍在。
+        // requestCode 格式为 (eventId.toInt() shl 8) | occurrenceIndex (0..255)，
+        // 遍历所有 256 种可能确保清除。
+        val baseCode = eventId.toInt() shl 8
+        for (i in 0..255) {
+            cancelRequest(baseCode or i)
+        }
     }
 
     private fun cancelRequest(requestCode: Int) {
