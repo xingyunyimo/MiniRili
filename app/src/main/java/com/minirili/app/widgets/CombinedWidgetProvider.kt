@@ -37,6 +37,10 @@ class CombinedWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
+            Intent.ACTION_DATE_CHANGED -> {
+                refreshAll(context)
+                return
+            }
             ACTION_TOGGLE_TIME_FORMAT -> {
                 toggleTimeFormat(context)
                 return
