@@ -265,7 +265,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
                     cityDao = db.cityDao()
                 )
                 val cities = repo.getCities()
-                val city = cities.find { it.isSelected } ?: cities.firstOrNull() ?: DEFAULT_CITY
+                val city = cities.find { it.isCurrentLocation } ?: cities.find { it.isSelected } ?: cities.firstOrNull() ?: DEFAULT_CITY
                 views.setTextViewText(R.id.widget_city, city.name)
                 repo.getCurrentWeather(city)
             }
@@ -298,7 +298,7 @@ class CombinedWidgetProvider : AppWidgetProvider() {
                     cityDao = db.cityDao()
                 )
                 val cities = repo.getCities()
-                val city = cities.find { it.isSelected } ?: cities.firstOrNull() ?: DEFAULT_CITY
+                val city = cities.find { it.isCurrentLocation } ?: cities.find { it.isSelected } ?: cities.firstOrNull() ?: DEFAULT_CITY
                 repo.getAQI(city)
             }
         } catch (_: Throwable) { null }

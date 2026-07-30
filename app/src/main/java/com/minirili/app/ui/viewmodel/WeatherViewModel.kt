@@ -157,6 +157,8 @@ class WeatherViewModel @Inject constructor(
     /** 删除城市 */
     fun removeCity(cityId: String) {
         viewModelScope.launch {
+            val city = _cities.value.find { it.id == cityId } ?: return@launch
+            if (city.isCurrentLocation) return@launch // 定位城市不可删除
             repository.removeCity(cityId)
             _cities.value = repository.getCities()
             // 如果删的是当前城市，切到第一个城市或重新定位

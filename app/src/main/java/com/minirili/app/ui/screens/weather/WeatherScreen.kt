@@ -272,7 +272,7 @@ private fun CityChipRow(
                     selected = c.id == currentCityId,
                     onClick = { onSelectCity(c) },
                     label = { Text(c.name, maxLines = 1) },
-                    trailingIcon = if (c.id != currentCityId && cities.size > 1) {
+                    trailingIcon = if (c.id != currentCityId && cities.size > 1 && !c.isCurrentLocation) {
                         { Icon(Icons.Default.Close, "删除", Modifier.size(14.dp).clickable { onDeleteCity(c) }) }
                     } else null
                 )
