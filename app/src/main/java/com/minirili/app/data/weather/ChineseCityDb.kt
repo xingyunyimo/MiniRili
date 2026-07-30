@@ -1,5 +1,11 @@
 package com.minirili.app.data.weather
 
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.sqrt
+import kotlin.math.sin
+import kotlin.math.PI
+
 /**
  * 中国城市本地数据库，覆盖全国地级市行政区 + 四川/重点省份县级行政区。
  *
@@ -277,4 +283,36 @@ object ChineseCityDb {
 
         return (exact + contains + children).map { it.toCity() }
     }
+
+    /**
+     * 根据经纬度查找最近的城市（Haversine 距离）。
+     * 返回匹配到的城市 Entry（含 name, latitude, longitude），若数据库为空则返回 null。
+     */
+    fun getNearestEntry(lat: Double, lon: Double): Entry? {
+        var nearest: Entry? = null
+        var minDist = Double.MAX_VALUE
+
+        for (entry in entries) {
+            val d = haversineDistance(entry.latitude, entry.longitude, lat, lon)
+            if (d < minDist) {
+                minDist = d
+                nearest = entry
+            }
+        }
+        return nearest
+    }
+
+    /** Haversine 球面距离公式，返回千米数 */
+    private fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val R = 6371.0 // Earth radius in km
+        val dLat = toRadians(lat2 - lat1)
+        val dLon = toRadians(lon2 - lon1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(toRadians(lat1)) * cos(toRadians(lat2)) *
+                sin(dLon / 2) * sin(dLon / 2)
+        val c = 2 * asin(sqrt(a))
+        return R * c
+    }
+
+    private fun toRadians(degrees: Double) = degrees * Math.PI / 180.0
 }

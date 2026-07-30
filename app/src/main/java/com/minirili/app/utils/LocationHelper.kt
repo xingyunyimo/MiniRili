@@ -11,6 +11,7 @@ import android.location.LocationManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.minirili.app.data.weather.City
+import com.minirili.app.data.weather.ChineseCityDb
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -24,9 +25,11 @@ import kotlin.coroutines.resume
  * 定位辅助：用 Android 内置 LocationManager（无需 play-services-location），
  * 零新增依赖。无权限或定位失败时返回 null，由调用方降级到默认城市。
  *
- * 反地理编码（经纬度 → 城市名）双通道：
- *  1. Android 本地 Geocoder：零外发、最快；但部分设备（无 Play Services）返回空。
- *  2. Nominatim (OpenStreetMap) 网络反查：拿 address.state/city/county 拼成 "省 市 区县"。
+ * 反地理编码（经纬度 → 城市名）三通道：
+ *   1. Android 本地 Geocoder：零外发、最快；但部分设备（无 Play Services）返回空。
+ *   2. Nominatim (OpenStreetMap) 网络反查：拿 address.state/city/county 拼成"省 市 区县"。
+ *   3. 本地 ChineseCityDb 最近邻匹配：国内设备最常走的分支（Geocoder + Nominatim 双失败），
+ *      根据 Haversine 距离找出数据库中最邻近的城市名称。
  *
  * 直辖市自动去重；都失败时调用方 fallback "当前位置"。
  */
@@ -90,7 +93,7 @@ class LocationHelper(private val context: Context) {
                     val cs = android.os.CancellationSignal()
                     cont.invokeOnCancellation { cs.cancel() }
                     lm.getCurrentLocation(
-                        LocationManager.PASSIVE_PROVIDER,
+                        LocationManager.NETWORK_PROVIDER,
                         cs,
                         ContextCompat.getMainExecutor(context)
                     ) { location ->
@@ -115,14 +118,18 @@ class LocationHelper(private val context: Context) {
     }
 
     /**
-     * 反地理编码：Android Geocoder 优先，失败时 Nominatim (OpenStreetMap) 做网络反查。
-     * 返回 "省 市 区县"；都失败返回 null，调用方 fallback "当前位置"。
+     * 反地理编码：Android Geocoder 优先，失败时 Nominatim (OpenStreetMap) 做网络反查，
+     * 再失败则用本地 ChineseCityDb 最近邻匹配。均失败返回 null，调用方 fallback "当前位置"。
+     * 返回 "省 市 区县"。
      */
     private suspend fun reverseGeocode(lat: Double, lon: Double): String? {
         // 1. Android 本地 Geocoder（零外发）
         runCatching { reverseGeocodeLocal(lat, lon) }.getOrNull()?.let { return it }
         // 2. 网络反查 fallback
-        return runCatching { reverseGeocodeNominatim(lat, lon) }.getOrNull()
+        val result = runCatching { reverseGeocodeNominatim(lat, lon) }.getOrNull()
+        if (result != null) return result
+        // 3. 本地数据库 fallback —— 国内设备最常走的分支（Geocoder + Nominatim 双失败）
+        return ChineseCityDb.getNearestEntry(lat, lon)?.name
     }
 
     /** Android 本地 Geocoder：API 33+ 走异步回调，旧版同步调用。 */
