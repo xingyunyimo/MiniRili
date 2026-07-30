@@ -7,6 +7,8 @@ import com.minirili.app.data.weather.AQIData
 import com.minirili.app.data.weather.City
 import com.minirili.app.data.weather.WeatherRepository
 import com.minirili.app.data.weather.WeatherResult
+import com.minirili.app.utils.DateUtils
+import com.minirili.app.utils.DailyLocationPrefs
 import com.minirili.app.utils.LocationHelper
 import com.minirili.app.widgets.CombinedWidgetProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -81,6 +83,8 @@ class WeatherViewModel @Inject constructor(
         }
         // 轻量刷新定位：当前处于定位模式时，尝试刷新位置
         viewModelScope.launch { tryRefreshLocation() }
+        // 每天首次进入时自动定位
+        viewModelScope.launch { tryDailyAutoLocation() }
     }
 
     /** 用户主动触发"重新定位"。不受 30 分钟间隔限制。 */
@@ -269,6 +273,20 @@ class WeatherViewModel @Inject constructor(
             longitude = 116.4074,
             country = "中国"
         )
+    }
+
+    /**
+     * 每天 0 点后首次进入页面时，静默刷新一次定位。
+     * 仅在定位模式（_usingCurrentLocation == true）且跨天时触发。
+     */
+    private suspend fun tryDailyAutoLocation() {
+        if (!_usingCurrentLocation.value) return
+        val today = DateUtils.today()
+        val lastAuto = DailyLocationPrefs.getLastAutoDate(appContext)
+        if (today == lastAuto) return
+        lastLocationAttemptMs = 0L
+        tryRefreshLocation()
+        DailyLocationPrefs.setLastAutoDate(appContext, today)
     }
 }
 
