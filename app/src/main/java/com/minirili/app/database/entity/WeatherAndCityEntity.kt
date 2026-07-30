@@ -26,11 +26,12 @@ data class CityEntity(
     val longitude: Double,
     val country: String?,
     val isCurrentLocation: Boolean = false,
-    val sortOrder: Long = 0L
+    val sortOrder: Long = 0L,
+    val isSelected: Boolean = false
 )
 
 fun CityEntity.toDomain(): com.minirili.app.data.weather.City =
     com.minirili.app.data.weather.City(
         id = id, name = name, latitude = latitude, longitude = longitude,
-        country = country, isCurrentLocation = isCurrentLocation
+        country = country, isCurrentLocation = isCurrentLocation, isSelected = isSelected
     )

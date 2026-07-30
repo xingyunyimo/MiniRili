@@ -36,7 +36,13 @@ WeatherViewModel (@HiltViewModel, 注入 WeatherRepository + LocationHelper)
     ├─ start() → loadCityAndRefresh() + tryRefreshLocation()
     │      └─ 定位模式下每 30 分钟轻量刷新位置
     │      └─ 用户 onPermissionGranted() 或 refreshLocation() 重置间隔
-    ├─ observeCities() Flow → 城市表变化自动切换
+    ├─ observeCities() Flow → 城市表变化时：
+    │      └─ 当前城市还在列表里 → 不动
+    │      └─ 当前城市被删 → 找 isSelected 城市，没有则 fallback firstOrNull
+    │      └─ 空列表 → loadDefaultCity()
+    ├─ selectCity(city) → Room setSelectedCity(id) → 触发 observeCities 同步所有 VM 实例
+    ├─ addCity(city) → ensureCity + setSelectedCity
+    ├─ loadDefaultCity() → GPS → ensureCity + setSelectedCity + clearWeatherCache
     │
     ▼
 WeatherRepository (@Singleton)
@@ -44,6 +50,8 @@ WeatherRepository (@Singleton)
     ├─► WeatherCacheDao (Room, 30 分钟缓存, key="${lat},${lon}|today")
     │      └─ 定位更新后 clearAll() 强制走网络
     ├─► CityDao (Room, 多城市管理)
+    │      └─ isSelected 列标记当前选中城市，进程恢复时读取
+    │      └─ ensureCity() 保留旧 isSelected 值，避免 REPLACE 丢失
     └─► WeatherDataSource (接口)
           └─► OpenMeteoApi (HttpURLConnection + org.json)
                     │
@@ -53,6 +61,12 @@ WeatherRepository (@Singleton)
                             ├─ getCurrentCityAsync() — 协程安全
                             └─ getFreshLocation() — API 30+ 一次被动定位，低版本回退
 ```
+
+**多城市选择机制：**
+- `CityEntity.isSelected` 列持久化用户选中状态，进程恢复 / Widget / Worker 均读取此字段
+- `selectCity()` / `addCity()` / `loadDefaultCity()` 均写入 `isSelected`
+- `observeCities` 监听器不再无脑覆盖 `_currentCity`，仅当前城市被删除时才切换
+- Widget、Worker、出行建议接收器均读取 `isSelected` 城市，而非固定 `firstOrNull()`
 
 ## 出行建议子系统（WTH-06）
 

@@ -32,7 +32,7 @@ class DailyTravelAdviceReceiver : BroadcastReceiver() {
                     cityDao = db.cityDao()
                 )
                 val cities = repository.getCities()
-                val city = cities.firstOrNull() ?: DEFAULT_BEIJING
+                val city = cities.find { it.isSelected } ?: cities.firstOrNull() ?: DEFAULT_BEIJING
 
                 val result = repository.getCurrentWeather(city)
                 if (result is WeatherResult.ForDate) {

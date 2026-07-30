@@ -49,7 +49,8 @@ data class City(
     val latitude: Double,
     val longitude: Double,
     val country: String?,
-    val isCurrentLocation: Boolean = false
+    val isCurrentLocation: Boolean = false,
+    val isSelected: Boolean = false
 )
 
 /** AQI 数据（WTH-07，Open-Meteo Air Quality API） */

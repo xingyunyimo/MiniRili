@@ -59,12 +59,22 @@ class WeatherViewModel @Inject constructor(
             repository.observeCities().drop(1).collect { cityList ->
                 _cities.value = cityList
                 val current = _currentCity.value
+                // 当前城市还在列表里 → 不动
+                if (current != null && cityList.any { it.id == current.id }) return@collect
+                // 当前城市被删或不存在 → 找 isSelected 城市
+                val selected = cityList.find { it.isSelected }
+                if (selected != null) {
+                    _currentCity.value = selected.copy(isCurrentLocation = false)
+                    _usingCurrentLocation.value = false
+                    refresh(selected)
+                    return@collect
+                }
                 val first = cityList.firstOrNull()
-                if (first != null && (current == null || current.id != first.id)) {
+                if (first != null) {
                     _currentCity.value = first.copy(isCurrentLocation = false)
                     _usingCurrentLocation.value = false
                     refresh(first)
-                } else if (cityList.isEmpty() && current != null) {
+                } else {
                     loadDefaultCity()
                 }
             }
@@ -123,6 +133,9 @@ class WeatherViewModel @Inject constructor(
     /** 切换城市 */
     fun selectCity(city: City) {
         if (city.id == _currentCity.value?.id) return
+        viewModelScope.launch {
+            repository.setSelectedCity(city.id)
+        }
         _currentCity.value = city
         _usingCurrentLocation.value = false
         refresh(city)
@@ -132,6 +145,7 @@ class WeatherViewModel @Inject constructor(
     fun addCity(city: City) {
         viewModelScope.launch {
             repository.ensureCity(city)
+            repository.setSelectedCity(city.id)
             _cities.value = repository.getCities()
             _currentCity.value = city
             _usingCurrentLocation.value = false
@@ -177,6 +191,15 @@ class WeatherViewModel @Inject constructor(
             _state.value = WeatherUiState.Loading
             _cities.value = repository.getCities()
 
+            // 优先恢复上次选中的城市
+            val selected = _cities.value.find { it.isSelected }
+            if (selected != null) {
+                _currentCity.value = selected.copy(isCurrentLocation = false)
+                _usingCurrentLocation.value = false
+                refresh(selected)
+                return@launch
+            }
+
             if (_cities.value.isNotEmpty()) {
                 val city = _cities.value.first().copy(isCurrentLocation = false)
                 _currentCity.value = city
@@ -192,6 +215,7 @@ class WeatherViewModel @Inject constructor(
         val locatedCity = locationHelper.getCurrentCityAsync()
         if (locatedCity != null) {
             repository.ensureCity(locatedCity)
+            repository.setSelectedCity(locatedCity.id)
             repository.clearWeatherCache()
             _cities.value = repository.getCities()
             _currentCity.value = locatedCity

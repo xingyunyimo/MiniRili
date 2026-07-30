@@ -15,7 +15,7 @@ import com.minirili.app.database.entity.WeatherCacheEntity
 
 @Database(
     entities = [EventEntity::class, WeatherCacheEntity::class, CityEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class CalendarDatabase : RoomDatabase() {
@@ -32,6 +32,10 @@ abstract class CalendarDatabase : RoomDatabase() {
             db.execSQL("ALTER TABLE events ADD COLUMN skipReminderDates TEXT NOT NULL DEFAULT ''")
         }
 
+        val MIGRATION_7_8 = Migration(7, 8) { db ->
+            db.execSQL("ALTER TABLE cities ADD COLUMN isSelected INTEGER NOT NULL DEFAULT 0")
+        }
+
         fun getDatabase(context: Context): CalendarDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -39,7 +43,7 @@ abstract class CalendarDatabase : RoomDatabase() {
                     CalendarDatabase::class.java,
                     "calendar_database"
                 )
-                    .addMigrations(MIGRATION_6_7)
+                    .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

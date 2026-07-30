@@ -74,6 +74,7 @@ class WeatherRepository @Inject constructor(
 
     /** 确保城市存在：传入 City，写入 DB；多城市管理用。 */
     suspend fun ensureCity(city: City) {
+        val existing = cityDao.getById(city.id)
         cityDao.upsert(
             CityEntity(
                 id = city.id,
@@ -82,9 +83,16 @@ class WeatherRepository @Inject constructor(
                 longitude = city.longitude,
                 country = city.country,
                 isCurrentLocation = city.isCurrentLocation,
-                sortOrder = System.currentTimeMillis()
+                sortOrder = System.currentTimeMillis(),
+                isSelected = existing?.isSelected ?: false
             )
         )
+    }
+
+    /** 将指定城市设为选中，清除其他城市的选中标记。 */
+    suspend fun setSelectedCity(id: String) {
+        cityDao.clearSelectedFlag()
+        cityDao.setSelectedFlag(id)
     }
 
     suspend fun getCities(): List<City> = cityDao.getAllOrdered().map { it.toDomain() }

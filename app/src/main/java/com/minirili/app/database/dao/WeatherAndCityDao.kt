@@ -38,4 +38,10 @@ interface CityDao {
 
     @Query("DELETE FROM cities WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("UPDATE cities SET isSelected = 0")
+    suspend fun clearSelectedFlag()
+
+    @Query("UPDATE cities SET isSelected = 1 WHERE id = :id")
+    suspend fun setSelectedFlag(id: String)
 }
