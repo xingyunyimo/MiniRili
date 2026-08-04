@@ -55,6 +55,8 @@ WeatherRepository (@Singleton)
     └─► WeatherDataSource (接口)
           └─► OpenMeteoApi (HttpURLConnection + org.json)
                     │
+                    ├─ searchCity() → ChineseCityDb（本地 3300 条行政区数据）+ Open-Meteo Geocoding 并发合并
+                    │
                     └─► LocationHelper (LocationManager, 无 play-services 依赖)
                             │
                             ├─ getCurrentCity() — 同步，getLastKnownLocation

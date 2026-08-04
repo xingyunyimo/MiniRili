@@ -129,7 +129,16 @@ class LocationHelper(private val context: Context) {
         val result = runCatching { reverseGeocodeNominatim(lat, lon) }.getOrNull()
         if (result != null) return result
         // 3. 本地数据库 fallback —— 国内设备最常走的分支（Geocoder + Nominatim 双失败）
-        return ChineseCityDb.getNearestEntry(lat, lon)?.name
+        val entry = ChineseCityDb.getNearestEntry(lat, lon) ?: return null
+        return buildString {
+            append(entry.province)
+            if (entry.city.isNotBlank() && entry.city != entry.province) {
+                append(" ").append(entry.city)
+            }
+            if (entry.name.isNotBlank() && entry.name != entry.city && entry.name != entry.province) {
+                append(" ").append(entry.name)
+            }
+        }
     }
 
     /** Android 本地 Geocoder：API 33+ 走异步回调，旧版同步调用。 */
