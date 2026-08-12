@@ -66,8 +66,8 @@ class WeatherViewModel @Inject constructor(
                 // 当前城市被删或不存在 → 找 isSelected 城市
                 val selected = cityList.find { it.isSelected }
                 if (selected != null) {
-                    _currentCity.value = selected.copy(isCurrentLocation = false)
-                    _usingCurrentLocation.value = false
+                    _currentCity.value = selected.copy(isCurrentLocation = selected.isCurrentLocation)
+                    _usingCurrentLocation.value = selected.isCurrentLocation
                     refresh(selected)
                     return@collect
                 }
@@ -81,10 +81,6 @@ class WeatherViewModel @Inject constructor(
                 }
             }
         }
-        // 轻量刷新定位：当前处于定位模式时，尝试刷新位置
-        viewModelScope.launch { tryRefreshLocation() }
-        // 每天首次进入时自动定位
-        viewModelScope.launch { tryDailyAutoLocation() }
     }
 
     /** 用户主动触发"重新定位"。不受 30 分钟间隔限制。 */
@@ -200,9 +196,11 @@ class WeatherViewModel @Inject constructor(
             // 优先恢复上次选中的城市
             val selected = _cities.value.find { it.isSelected }
             if (selected != null) {
-                _currentCity.value = selected.copy(isCurrentLocation = false)
-                _usingCurrentLocation.value = false
+                _currentCity.value = selected.copy(isCurrentLocation = selected.isCurrentLocation)
+                _usingCurrentLocation.value = selected.isCurrentLocation
                 refresh(selected)
+                tryRefreshLocation()
+                tryDailyAutoLocation()
                 return@launch
             }
 
@@ -214,6 +212,7 @@ class WeatherViewModel @Inject constructor(
                 return@launch
             }
             loadDefaultCity()
+            tryDailyAutoLocation()
         }
     }
 
