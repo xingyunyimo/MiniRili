@@ -27,6 +27,33 @@ RecurringReminderScheduler    CalendarScreen / ViewModel
 
 ## 天气子系统
 
+## 农历子系统
+
+```
+LunarCalendar (utils)
+    │
+    ├─ toLunarParts(gregorian) → LunarParts { yearBase, month, day, isLeapMonth }
+    │      ├─ 主路径：android.icu.util.ChineseCalendar（API 24+，覆盖 1900-2200）
+    │      │    无参构造 + setTimeInMillis + 字段读取，与 lunarToGregorianIcu 机制一致
+    │      └─ 兜底：内置春节锚点表（1899-2201，ICU 权威数据，含闰月 13 项时序）
+    │
+    ├─ lunarToGregorian(lunarYear, lunarMonth, lunarDay, isLeap) → String?
+    │      ├─ 主路径：ChineseCalendar.set(EXTENDED_YEAR/month/day/IS_LEAP) → getTimeInMillis
+    │      └─ 兜底：FALLBACK_YEAR_DATA + expandMonthDays（闰月年 13 个月时序）
+    │
+    └─ 显示函数：getLunarMonthName / getLunarDay / getLunarDayLabel / getGanZhiYear / ...
+          均通过 toLunarParts 获取底层结构再格式化，无独立年份限制
+
+RecurrenceEngine.lunarMonthlyDates / lunarYearlyDates
+    └─ 依赖 LunarCalendar.toLunarParts + lunarToGregorian 做日期往返
+```
+
+**关键设计决策：**
+- `toLunarPartsIcu` 和 `lunarToGregorianIcu` 均用无参构造 + `setTimeInMillis` / `set()` 字段，避免使用不存在的 `(int,int,int)` 构造器（Android ICU 仅有 `(TimeZone,Locale)` / `(Date)` / `(int,int,int,int)` 等变体）。
+- fallback 表布局：13 项 = 真实时序（正..被闰月 + 闰月 + ..腊月），`expandMonthDays` 按此布局展开。闰月年不再用"替换被闰月"的旧布局。
+- DST 修复：`toLunarPartsFallback` 的天数差计算加 12h 偏移，避免跨夏令时切换日导致整除截断错误。
+- 生成工具：`/tmp/icucheck/GenData.java` 用 ICU4J 76.1 逐日扫描生成，输出到 `fallback_table.txt`，Python 脚本替换源码块。
+
 ```
 WeatherCard / WeatherScreen
     │ observes StateFlow

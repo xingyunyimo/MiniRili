@@ -65,3 +65,4 @@ CalendarScreen 内嵌搜索栏，实时过滤事件标题/描述/标签，结果
 - **moveEventUp/Down 影响所有日期**：同一个 EventEntity 的 sortOrder 全局共享
 - **completed 标记所有日期**：无 per-occurrence 完成状态
 - **AllEventsScreen 不展开**：避免无限展开
+- **农历覆盖范围**：真机走 ICU（1900-2200 全覆盖）；fallback 表覆盖 1899-2201，JVM 单测/无 ICU 设备用。超出此范围的年份 `lunarToGregorian` 返回 null（事件静默跳过）

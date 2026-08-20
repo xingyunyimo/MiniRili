@@ -36,7 +36,7 @@ Kotlin + Jetpack Compose (Material3) | Room (KSP, ver 7) | Hilt 2.55 | Navigatio
 ## 日期工具
 
 - `utils/DateUtils.kt` — 公历格式化与解析
-- `utils/LunarCalendar.kt` — 完整农历（干支/生肖/节气/八字），有测试覆盖
+- `utils/LunarCalendar.kt` — 完整农历（干支/生肖/节气/八字），有测试覆盖。公历→农历主路径走 `android.icu.util.ChineseCalendar`（API 24+ 内置，覆盖 1900-2200）；无 Android 运行时时回退至内置春节锚点表（1899-2201，由 ICU 权威生成，含闰月）。
 - `utils/RecurrenceEngine.kt` — 重复事件日期计算引擎（8 种 repeatType）
 - `utils/IcsUtils.kt` — RFC 5545 导入导出
 - `data/HolidayService.kt` + `HolidayDatabase.kt` — 节假日 + 调休

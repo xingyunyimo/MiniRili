@@ -120,4 +120,42 @@ class LunarCalendarTest {
         assertEquals("一", LunarCalendar.getWeekdayShort(2))
         assertEquals("六", LunarCalendar.getWeekdayShort(7))
     }
+
+    // ===== 回归：农历回算"差一天"（2014 七月天数曾误写 30→29）=====
+
+    @Test
+    fun lunarBacktrack_2014_August_isCorrect() {
+        // 用户场景：设置农历 2014-08-20，回显应为 2014-09-13（八月二十）
+        assertEquals("2014-09-13", LunarCalendar.lunarToGregorian(2014, 8, 20))
+        assertEquals("初一", LunarCalendar.getLunarDay(cal(2014, 8, 25)))   // 八月初一
+        assertEquals("二十", LunarCalendar.getLunarDay(cal(2014, 9, 13)))   // 八月二十
+        assertEquals("廿一", LunarCalendar.getLunarDay(cal(2014, 9, 14)))   // 八月廿一
+    }
+
+    @Test
+    fun lunarBacktrack_2014_aroundLeapMonth() {
+        // 权威历法：10-23 九月三十，10-24 闰九月初一，11-22 十月初一
+        assertEquals("闰九", LunarCalendar.getLunarMonthName(cal(2014, 10, 24)))
+        assertEquals("三十", LunarCalendar.getLunarDay(cal(2014, 10, 23)))
+    }
+
+    @Test
+    fun lunarBacktrack_2025_leapMonth() {
+        // 权威历法：07-25 闰六月初一，08-23 七月初一
+        assertEquals("初一", LunarCalendar.getLunarDay(cal(2025, 7, 25)))
+        assertEquals("闰六", LunarCalendar.getLunarMonthName(cal(2025, 7, 25)))
+        assertEquals("七", LunarCalendar.getLunarMonthName(cal(2025, 8, 23)))
+    }
+
+    @Test
+    fun lunarBacktrack_2148_leapFirstMonth() {
+        // 权威历法：2148 年闰正月，正月初一=01-21，闰正月初一=02-20
+        assertEquals("正", LunarCalendar.getLunarMonthName(cal(2148, 1, 21)))
+        assertEquals("闰正", LunarCalendar.getLunarMonthName(cal(2148, 2, 20)))
+        assertEquals("正月", LunarCalendar.getLunarDayLabel(cal(2148, 1, 21)))   // 初一→月名+"月"
+        assertEquals("闰正月", LunarCalendar.getLunarDayLabel(cal(2148, 2, 20))) // 闰月初一→"闰月名"+"月"
+    }
+
+    private fun cal(y: Int, m1: Int, d: Int) =
+        Calendar.getInstance().apply { set(y, m1 - 1, d) }
 }

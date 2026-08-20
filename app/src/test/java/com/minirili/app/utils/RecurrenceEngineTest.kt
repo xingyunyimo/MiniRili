@@ -90,7 +90,7 @@ class RecurrenceEngineTest {
     @Test
     fun lunarYearlyEvent_expandsCorrectly() {
         // 2026-07-13 = 五月廿九，每年农历五月廿九重复
-        // 回退表仅覆盖 2000-2030，2027 年不在表中，因此只验证首次出现
+        // 回退表覆盖 1899-2201，2027 年也在表中
         val e = event("2026-07-13", useLunar = true, repeatType = "yearly")
         val result = RecurrenceEngine.expandForRange(listOf(e), "2026-01-01", "2026-12-31")
         val dates = result.map { it.occurrenceDate }.sorted()
