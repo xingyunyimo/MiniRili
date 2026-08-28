@@ -47,6 +47,26 @@ class IcsUtilsTest {
     }
 
     @Test
+    fun generateICS_valarmTriggerIsBeforeEvent() {
+        // reminderOffset=15 分钟 → TRIGGER 必须是 -PT900S（事件前 15 分钟），不能出现双负号 -PT-900S
+        val events = listOf(
+            EventEntity(
+                id = 1,
+                title = "提前提醒",
+                description = "",
+                type = "普通",
+                gregorianDate = "2024-02-15",
+                reminderOffset = 15
+            )
+        )
+
+        val icsContent = IcsUtils.generateICS(events)
+
+        assertTrue(icsContent.contains("TRIGGER:-PT900S"))
+        assertFalse(icsContent.contains("-PT-"))
+    }
+
+    @Test
     fun parseICS_parsesValidICS() {
         val icsContent = """BEGIN:VCALENDAR
 VERSION:2.0

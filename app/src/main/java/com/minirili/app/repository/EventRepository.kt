@@ -147,7 +147,7 @@ class EventRepository @Inject constructor(
 
     // 标签过滤（P2-SCH-02）
     fun getEventsByTag(tag: String): Flow<List<EventEntity>> =
-        eventDao.getEventsByTag("*$tag*")
+        eventDao.getEventsByTag("%$tag%")
 
     // UI-04: 事件上移（减小 sortOrder）
     suspend fun moveEventUp(eventId: Long, date: String) {

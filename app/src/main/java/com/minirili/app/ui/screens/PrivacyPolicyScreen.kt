@@ -96,7 +96,16 @@ fun PrivacyPolicyScreen(
             }
         },
         dismissButton = {
-            TextButton(onClick = { /* 退出应用 */ }) {
+            TextButton(onClick = {
+                var ctx: Context = context
+                while (ctx is android.content.ContextWrapper) {
+                    if (ctx is android.app.Activity) {
+                        ctx.finishAffinity()
+                        return@TextButton
+                    }
+                    ctx = ctx.baseContext
+                }
+            }) {
                 Text("退出")
             }
         }

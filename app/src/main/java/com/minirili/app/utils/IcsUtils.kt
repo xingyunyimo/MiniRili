@@ -72,9 +72,9 @@ X-WR-TIMEZONE:Asia/Shanghai
             writeXProp(sb, "X-MINIRILI-SORTORDER", event.sortOrder.toString())
             writeXProp(sb, "X-MINIRILI-ATTACHMENTS", event.attachments)
 
-            // VALARM（提醒偏移 — offset 存储为分钟，转成秒写 ICS）
+            // VALARM（提醒偏移 — offset 存储为分钟，转成秒写 ICS；负号表示事件前）
             if (event.reminderOffset > 0) {
-                val offsetSec = -(event.reminderOffset * 60)
+                val offsetSec = event.reminderOffset * 60
                 sb.append("BEGIN:VALARM\n")
                 sb.append("TRIGGER:-PT${offsetSec}S\n")
                 sb.append("ACTION:DISPLAY\n")
