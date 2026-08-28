@@ -25,34 +25,35 @@ RecurrenceEngine ─── 唯一日期计算来源
 RecurringReminderScheduler    CalendarScreen / ViewModel
 ```
 
+## 提醒子系统
+
+```
+EventRepository (包住所有提醒调度)
+    ├─ insert / update ──┐
+    ├─ skipOccurrence    ├─► scheduleForEvent(event, rescheduleRecurring)
+    ├─ skipReminderOnly  │        │
+    └─ restoreReminderOnly┘        ├─ repeatType != none
+                                   │     └─ scheduleRecurringReminder(base = 锚点 or 今天)
+                                   │           └─ RecurrenceEngine.expandForRange → 逐次排闹钟
+                                   └─ repeatType == none 且 (notifyNotification || notifyAlarm)
+                                         └─ calculateReminderTime(gregorianDate, reminderTime, offset)
+                                               └─ 全天事件 fallback 当天 09:00
+    ▼
+ReminderScheduler → AlarmManager.setAlarmClock(requestCode = eventId<<8 | occurrenceIndex)
+    ▼
+AlarmReceiver.onReceive
+    ├─ event == null → 直接返回（删除事件的运行时兜底）
+    ├─ repeatType != none → rescheduleNextOccurrence（必须在 skip 判断之前）
+    ├─ isOccurrenceSkipped(skipDates + skipReminderDates) → 命中则静默返回
+    └─ 发通知（3 个延后 Action）+ playAlarmSound + vibrate
+    ▼
+SnoozeReceiver（延后 5 分钟 / 1 小时 / 1 天，无次数上限）
+ReminderBootReceiver（开机/时间/日期变更 → rescheduleAllReminders）
+```
+
+详见 [reminder-system.md](reminder-system.md)。
+
 ## 天气子系统
-
-## 农历子系统
-
-```
-LunarCalendar (utils)
-    │
-    ├─ toLunarParts(gregorian) → LunarParts { yearBase, month, day, isLeapMonth }
-    │      ├─ 主路径：android.icu.util.ChineseCalendar（API 24+，覆盖 1900-2200）
-    │      │    无参构造 + setTimeInMillis + 字段读取，与 lunarToGregorianIcu 机制一致
-    │      └─ 兜底：内置春节锚点表（1899-2201，ICU 权威数据，含闰月 13 项时序）
-    │
-    ├─ lunarToGregorian(lunarYear, lunarMonth, lunarDay, isLeap) → String?
-    │      ├─ 主路径：ChineseCalendar.set(EXTENDED_YEAR/month/day/IS_LEAP) → getTimeInMillis
-    │      └─ 兜底：FALLBACK_YEAR_DATA + expandMonthDays（闰月年 13 个月时序）
-    │
-    └─ 显示函数：getLunarMonthName / getLunarDay / getLunarDayLabel / getGanZhiYear / ...
-          均通过 toLunarParts 获取底层结构再格式化，无独立年份限制
-
-RecurrenceEngine.lunarMonthlyDates / lunarYearlyDates
-    └─ 依赖 LunarCalendar.toLunarParts + lunarToGregorian 做日期往返
-```
-
-**关键设计决策：**
-- `toLunarPartsIcu` 和 `lunarToGregorianIcu` 均用无参构造 + `setTimeInMillis` / `set()` 字段，避免使用不存在的 `(int,int,int)` 构造器（Android ICU 仅有 `(TimeZone,Locale)` / `(Date)` / `(int,int,int,int)` 等变体）。
-- fallback 表布局：13 项 = 真实时序（正..被闰月 + 闰月 + ..腊月），`expandMonthDays` 按此布局展开。闰月年不再用"替换被闰月"的旧布局。
-- DST 修复：`toLunarPartsFallback` 的天数差计算加 12h 偏移，避免跨夏令时切换日导致整除截断错误。
-- 生成工具：`/tmp/icucheck/GenData.java` 用 ICU4J 76.1 逐日扫描生成，输出到 `fallback_table.txt`，Python 脚本替换源码块。
 
 ```
 WeatherCard / WeatherScreen
@@ -82,7 +83,7 @@ WeatherRepository (@Singleton)
     └─► WeatherDataSource (接口)
           └─► OpenMeteoApi (HttpURLConnection + org.json)
                     │
-                    ├─ searchCity() → ChineseCityDb（本地 3300 条行政区数据）+ Open-Meteo Geocoding 并发合并
+                    ├─ searchCity() → ChineseCityDb（本地 3320 条行政区数据）+ Open-Meteo Geocoding 并发合并
                     │
                     └─► LocationHelper (LocationManager, 无 play-services 依赖)
                             │
@@ -96,6 +97,34 @@ WeatherRepository (@Singleton)
 - `selectCity()` / `addCity()` / `loadDefaultCity()` 均写入 `isSelected`
 - `observeCities` 监听器不再无脑覆盖 `_currentCity`，仅当前城市被删除时才切换
 - Widget、Worker、出行建议接收器均读取 `isSelected` 城市，而非固定 `firstOrNull()`
+- 每天 0 点后首次进页面静默刷新一次定位城市（`AppLaunchPrefs` 记录日期）
+
+## 农历子系统
+
+```
+LunarCalendar (utils)
+    │
+    ├─ toLunarParts(gregorian) → LunarParts { yearBase, month, day, isLeapMonth }
+    │      ├─ 主路径：android.icu.util.ChineseCalendar（API 24+，覆盖 1900-2200）
+    │      │    无参构造 + setTimeInMillis + 字段读取，与 lunarToGregorianIcu 机制一致
+    │      └─ 兜底：内置春节锚点表（1899-2201，ICU 权威数据，含闰月 13 项时序）
+    │
+    ├─ lunarToGregorian(lunarYear, lunarMonth, lunarDay, isLeap) → String?
+    │      ├─ 主路径：ChineseCalendar.set(EXTENDED_YEAR/month/day/IS_LEAP) → getTimeInMillis
+    │      └─ 兜底：FALLBACK_YEAR_DATA + expandMonthDays（闰月年 13 个月时序）
+    │
+    └─ 显示函数：getLunarMonthName / getLunarDay / getLunarDayLabel / getGanZhiYear / ...
+          均通过 toLunarParts 获取底层结构再格式化，无独立年份限制
+
+RecurrenceEngine.lunarMonthlyDates / lunarYearlyDates
+    └─ 依赖 LunarCalendar.toLunarParts + lunarToGregorian 做日期往返
+```
+
+**关键设计决策：**
+- `toLunarPartsIcu` 和 `lunarToGregorianIcu` 均用无参构造 + `setTimeInMillis` / `set()` 字段，避免使用不存在的 `(int,int,int)` 构造器（Android ICU 仅有 `(TimeZone,Locale)` / `(Date)` / `(int,int,int,int)` 等变体）。
+- fallback 表布局：13 项 = 真实时序（正..被闰月 + 闰月 + ..腊月），`expandMonthDays` 按此布局展开。闰月年不再用"替换被闰月"的旧布局。
+- DST 修复：`toLunarPartsFallback` 的天数差计算加 12h 偏移，避免跨夏令时切换日导致整除截断错误。
+- 生成工具：`/tmp/icucheck/GenData.java` 用 ICU4J 76.1 逐日扫描生成，输出到 `fallback_table.txt`，Python 脚本替换源码块。
 
 ## 出行建议子系统（WTH-06）
 
@@ -119,11 +148,13 @@ CombinedWidgetProvider (AppWidgetProvider, 4x2)
     │ onUpdate → runBlocking
     ▼
 CalendarDatabase / HolidayService / LunarCalendar / OpenMeteoApi
-    │
+    │      └─ 今日事件用 RecurrenceEngine.expandForDate 展开（重复事件也会显示）
     ▼
-RemoteViews（农历+公历+节气+天气+事件列表）
+RemoteViews（农历+公历+节气+天气+事件列表，多事件每 5 秒轮播）
     │
-AlarmManager → 每 30 分钟 tick 刷新
+    ├─ TextClock 自行走时（无需手动 tick）
+    ├─ AlarmManager 每 30 分钟刷新天气（有精确闹钟权限用 setExactAndAllowWhileIdle，否则降级 setAndAllowWhileIdle）
+    └─ 监听 ACTION_DATE_CHANGED → 0 点自动刷新并续约
 ```
 
 ## 附加工具

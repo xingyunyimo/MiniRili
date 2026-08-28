@@ -106,7 +106,7 @@ class RecurringReminderScheduler(
      *
      * hour/minute 取自 `baseReminderTimeMs`（即事件时间，不含偏移），
      * 应用到 occurrence 日期后，再减去 `offsetMinutes` 得到闹钟触发时刻。
-     * 全天事件（reminderTime <= 0）fallback 到中午 12:00。
+     * 全天事件（reminderTime <= 0）fallback 到上午 09:00。
      */
     fun calculateReminderTime(calendar: Calendar, baseReminderTimeMs: Long, offsetMinutes: Int): Long {
         if (baseReminderTimeMs != 0L) {
@@ -114,7 +114,7 @@ class RecurringReminderScheduler(
             calendar.set(Calendar.HOUR_OF_DAY, baseCal.get(Calendar.HOUR_OF_DAY))
             calendar.set(Calendar.MINUTE, baseCal.get(Calendar.MINUTE))
         } else {
-            calendar.set(Calendar.HOUR_OF_DAY, 12)
+            calendar.set(Calendar.HOUR_OF_DAY, 9)
             calendar.set(Calendar.MINUTE, 0)
         }
         calendar.set(Calendar.SECOND, 0)
@@ -127,13 +127,15 @@ class RecurringReminderScheduler(
         allEvents.forEach { event ->
             reminderScheduler.cancelReminder(event.id)
             if (event.repeatType != "none") {
-                val baseDate = getBaseDateForRecurring(event)
-                if (baseDate != null) {
-                    scheduleRecurringReminder(event, baseDate)
+                getBaseDateForRecurring(event)?.let { scheduleRecurringReminder(event, it) }
+            } else if (event.notifyNotification || event.notifyAlarm) {
+                // reminderTime 是 2000-01-01 基准的"时:分编码器"，不能直接当触发时刻用，
+                // 必须经 calculateReminderTime 套到事件日期上（全天事件 fallback 到 09:00）。
+                val dateCal = DateUtils.parseGregorian(event.gregorianDate)
+                val triggerTime = calculateReminderTime(dateCal, event.reminderTime, event.reminderOffset)
+                if (triggerTime > System.currentTimeMillis()) {
+                    reminderScheduler.scheduleReminder(event.id, event.gregorianDate, triggerTime)
                 }
-            } else if (event.reminderTime > 0) {
-                val triggerTime = event.reminderTime - event.reminderOffset * 60L * 1000L
-                reminderScheduler.scheduleReminder(event.id, event.gregorianDate, triggerTime)
             }
         }
     }

@@ -41,31 +41,38 @@ class EventRepository @Inject constructor(
 
     suspend fun insert(event: EventEntity) {
         val newId = eventDao.insert(event.copy(id = 0L))
-        if (event.repeatType != "none") {
-            recurringReminderScheduler.scheduleRecurringReminder(event.copy(id = newId), event.gregorianDate)
-        } else if (event.reminderTime > 0) {
-            val dateCal = DateUtils.parseGregorian(event.gregorianDate)
-            val triggerTime = recurringReminderScheduler.calculateReminderTime(
-                dateCal, event.reminderTime, event.reminderOffset
-            )
-            reminderScheduler.scheduleReminder(newId, event.gregorianDate, triggerTime)
-        }
+        scheduleForEvent(event.copy(id = newId), rescheduleRecurring = false)
         CombinedWidgetProvider.refreshWidget(appContext)
     }
 
     suspend fun update(event: EventEntity) {
         eventDao.update(event)
         reminderScheduler.cancelReminder(event.id)
+        scheduleForEvent(event, rescheduleRecurring = false)
+        CombinedWidgetProvider.refreshWidget(appContext)
+    }
+
+    /**
+     * 按事件类型排闹钟。
+     * @param rescheduleRecurring true 时以"今天"为基续排（跳过/恢复操作用，锚点过旧的周期事件也能重排未来窗口）；
+     *                            false 时以事件锚点日期为基（增删改常规路径）。
+     */
+    private suspend fun scheduleForEvent(event: EventEntity, rescheduleRecurring: Boolean) {
         if (event.repeatType != "none") {
-            recurringReminderScheduler.scheduleRecurringReminder(event, event.gregorianDate)
-        } else if (event.reminderTime > 0) {
+            val base = if (rescheduleRecurring) {
+                val today = DateUtils.today()
+                if (today > event.gregorianDate) today else event.gregorianDate
+            } else event.gregorianDate
+            recurringReminderScheduler.scheduleRecurringReminder(event, base)
+        } else if (event.notifyNotification || event.notifyAlarm) {
             val dateCal = DateUtils.parseGregorian(event.gregorianDate)
             val triggerTime = recurringReminderScheduler.calculateReminderTime(
                 dateCal, event.reminderTime, event.reminderOffset
             )
-            reminderScheduler.scheduleReminder(event.id, event.gregorianDate, triggerTime)
+            if (triggerTime > System.currentTimeMillis()) {
+                reminderScheduler.scheduleReminder(event.id, event.gregorianDate, triggerTime)
+            }
         }
-        CombinedWidgetProvider.refreshWidget(appContext)
     }
 
     suspend fun delete(event: EventEntity) {
@@ -82,7 +89,9 @@ class EventRepository @Inject constructor(
         val current = event.skipDates.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         if (normalized !in current) {
             current.add(normalized)
-            eventDao.update(event.copy(skipDates = current.joinToString(",")))
+            val updated = event.copy(skipDates = current.joinToString(","))
+            eventDao.update(updated)
+            rescheduleAfterSkipChange(updated)
         }
         CombinedWidgetProvider.refreshWidget(appContext)
     }
@@ -95,7 +104,9 @@ class EventRepository @Inject constructor(
         val current = event.skipReminderDates.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         if (normalized !in current) {
             current.add(normalized)
-            eventDao.update(event.copy(skipReminderDates = current.joinToString(",")))
+            val updated = event.copy(skipReminderDates = current.joinToString(","))
+            eventDao.update(updated)
+            rescheduleAfterSkipChange(updated)
         }
         CombinedWidgetProvider.refreshWidget(appContext)
     }
@@ -108,9 +119,22 @@ class EventRepository @Inject constructor(
         val current = event.skipReminderDates.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
         if (normalized in current) {
             current.remove(normalized)
-            eventDao.update(event.copy(skipReminderDates = current.joinToString(",")))
+            val updated = event.copy(skipReminderDates = current.joinToString(","))
+            eventDao.update(updated)
+            rescheduleAfterSkipChange(updated)
         }
         CombinedWidgetProvider.refreshWidget(appContext)
+    }
+
+    /**
+     * 跳过/恢复提醒后重排该事件的闹钟窗口（双保险）。
+     * 不重排的话，被跳过那次触发不会滚动窗口（AlarmReceiver 在 skip 命中时提前 return），
+     * 连续跳过到窗口末端会导致周期提醒静默断流。
+     */
+    private suspend fun rescheduleAfterSkipChange(event: EventEntity) {
+        if (event.repeatType == "none") return
+        reminderScheduler.cancelReminder(event.id)
+        scheduleForEvent(event, rescheduleRecurring = true)
     }
 
     // P2-SCH-01 搜索

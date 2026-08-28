@@ -13,11 +13,11 @@
 ./gradlew assembleDebug      # 仅构建 APK
 ```
 
-debug APK 输出到 `app/build/outputs/apk/debug/app-debug.apk`。
+debug APK 输出到 `app/build/outputs/apk/debug/MiniRili.apk`（`outputFileName` 已在 build.gradle.kts 改名）。
 
 ## 技术栈
 
-Kotlin + Jetpack Compose (Material3) | Room (KSP, ver 7) | Hilt 2.55 | Navigation-Compose | AlarmManager | WorkManager | HttpURLConnection | DataStore Preferences | AppWidgetProvider
+Kotlin + Jetpack Compose (Material3) | Room (KSP，schema version 8) | Hilt 2.55 | Navigation-Compose | AlarmManager | WorkManager | HttpURLConnection | DataStore Preferences | AppWidgetProvider
 
 包名：`com.minirili.app`，minSdk 26，targetSdk 35。
 
@@ -26,12 +26,16 @@ Kotlin + Jetpack Compose (Material3) | Room (KSP, ver 7) | Hilt 2.55 | Navigatio
 - **Repository 包住提醒调度**。所有对事件的增删改都走 `EventRepository`。
 - **`EventEntity.gregorianDate`** 公历主键 `YYYY-MM-DD`。`reminderTime` 是 Unix 毫秒时间戳（事件时间，不含偏移），`reminderOffset` 是偏移量（分钟）。
 - **`reminderTime` 基准日期固定为 2000-01-01**（仅取 hour/minute），避免农历早于 1970 的日期导致负时间戳。调度器只从中提取 `HOUR_OF_DAY` 和 `MINUTE`，套到 `gregorianDate` 上计算触发时刻。
-- **提醒触发时间** = `gregorianDate` 为日期基准 + `reminderTime` 的 hour/minute + 减去 `reminderOffset * 60 * 1000`。由 `RecurringReminderScheduler.calculateReminderTime()` 统一计算。
+- **提醒触发时间** = `gregorianDate` 为日期基准 + `reminderTime` 的 hour/minute + 减去 `reminderOffset * 60 * 1000`。由 `RecurringReminderScheduler.calculateReminderTime()` 统一计算。**全天事件**（`reminderTime == 0`）fallback 到当天 **09:00**，可以正常提醒；任何路径都不能拿 `reminderTime` 直接当触发时刻用（它是 2000 年 epoch，必落在过去）。
+- **排程条件统一为 `notifyNotification || notifyAlarm`**，不能写成 `reminderTime > 0`（会漏排全天事件）。insert / update / 跳过类操作共用 `EventRepository.scheduleForEvent()`。
+- **跳过与续约的顺序**：`AlarmReceiver` 必须先 `rescheduleNextOccurrence` 再判断 skip，否则被跳过的触发不滚动窗口，连续跳过会让周期提醒静默断流。
 - **`EventEntity.useLunar`** 区分农历/阳历事件；重复 `"monthly"/"yearly"` 配合 `useLunar` 决定是否走农历排期。
 - **`EventEntity.skipDates`** 逗号分隔 `YYYY-MM-DD`，标记周期事件中某次不触发（不展示+不提醒）。也用于"仅删除本次"。
 - **`EventEntity.skipReminderDates`** 逗号分隔 `YYYY-MM-DD`，标记周期事件中仅跳过提醒（事件仍展示）。独立于 `skipDates`。
+- **`EventEntity.lunarDate` 不可信**：保存时写入的是 `selectedDate`（公历值）而非农历，且**不参与任何运行时计算**（调度器与 `RecurrenceEngine` 一律从 `gregorianDate` 用 `toLunarParts` 反推农历）。它只被 ICS/JSON 导入导出透传。需要农历值时请现算，不要读这个字段。
 - **导航**：新增页面 route 必须加进 `Screen` sealed class（`ui/navigation/Screen.kt`），事件详情用 `Screen.EventDetail.createRoute(id)`。
-- **通知方式约束**：`EventDetailScreen` 内 `forceAllDay` 为 true 时，`reminderTime` 置 0 且保存时校验 `notifyNotification` 和 `notifyAlarm` 不能同时为 true。
+- **农历事件日期选择器**：`EventDetailScreen` 的 `DateTimePickerDialog` 在 `useLunar` 时必须用 `LunarCalendar.toLunarParts(selectedDate)` 预填**农历**值，确认时再 `lunarToGregorian(..., isLeapMonth)` 反推为公历存 `gregorianDate`。预填公历值会导致公历被当农历反推而日期漂移；闰月标记需一并传入。农历日 clamp 用 1..30，不能用公历月天数。
+- **新建事件默认**：`notifyNotification = true`、`notifyAlarm = false`（闹钟属强提醒，需用户主动开）。
 
 ## 日期工具
 
@@ -57,4 +61,4 @@ Kotlin + Jetpack Compose (Material3) | Room (KSP, ver 7) | Hilt 2.55 | Navigatio
 
 ## 测试覆盖
 
-`DateUtilsTest` / `LunarCalendarTest` / `IcsUtilsTest` / `HolidayServiceTest` / `ChineseCityDbTest` / `OccurrenceSkipTest` / `RecurrenceEngineTest`。覆盖：日期往返、农历闰月、ICS 往返解析、节假日判断、城市数据库查询、周期事件跳过、农历每月/每年重复展开、skipDates 过滤。
+`DateUtilsTest` / `LunarCalendarTest` / `LunarCalendarYearRangeConsistencyTest` / `IcsUtilsTest` / `HolidayServiceTest` / `ChineseCityDbTest` / `OccurrenceSkipTest` / `RecurrenceEngineTest`。覆盖：日期往返、农历闰月、1899-2201 全量公历↔农历自洽、1953 农历事件防漂移、ICS 往返解析、节假日判断、城市数据库查询、周期事件跳过、农历每月/每年重复展开、skipDates 过滤。

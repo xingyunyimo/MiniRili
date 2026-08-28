@@ -97,7 +97,8 @@ fun EventDetailScreen(
     var skipDates by remember { mutableStateOf("") }
     var skipReminderDatesState by remember { mutableStateOf("") }
     var notifyNotification by remember { mutableStateOf(true) }
-    var notifyAlarm by remember { mutableStateOf(true) }
+    // 闹钟属"强提醒"，默认关闭，由用户主动开启，避免新建事件到点突然响铃
+    var notifyAlarm by remember { mutableStateOf(false) }
     var tagsText by remember { mutableStateOf("") }
     var eventColor by remember { mutableIntStateOf(0) }
     var eventPriority by remember { mutableIntStateOf(1) }
@@ -114,6 +115,8 @@ fun EventDetailScreen(
     var showDeleteEventDialog by remember { mutableStateOf(false) }
     var showSkipConfirmDialog by remember { mutableStateOf<String?>(null) }
     var deleteChoice by remember { mutableStateOf("all") } // "this"=仅本次, "all"=全部
+    var titleMissing by remember { mutableStateOf(false) }
+    var pendingSaveAfterExpiredConfirm by remember { mutableStateOf(false) }
     val contextDate = remember { initDate.takeIf { it.isNotBlank() } ?: selectedDate }
 
     var customTypesVersion by remember { mutableStateOf(0) }
@@ -207,7 +210,14 @@ fun EventDetailScreen(
             c.set(Calendar.SECOND, 0)
             c.timeInMillis
         }
-        forceAllDay -> 0L
+        forceAllDay -> {
+            // 全天事件提醒固定在当天 09:00，与调度器 calculateReminderTime 的 fallback 保持一致
+            val c = DateUtils.parseGregorian(selectedDate)
+            c.set(Calendar.HOUR_OF_DAY, 9)
+            c.set(Calendar.MINUTE, 0)
+            c.set(Calendar.SECOND, 0)
+            c.timeInMillis
+        }
         else -> {
             val c = DateUtils.parseGregorian(selectedDate)
             c.set(Calendar.HOUR_OF_DAY, eventHour)
@@ -289,12 +299,20 @@ fun EventDetailScreen(
                         }
                     }
                     TextButton(onClick = {
-                        if (title.text.isBlank()) return@TextButton
-                        if (forceAllDay && (notifyNotification || notifyAlarm)) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar("全天事件无法发送通知，请取消全天或关闭通知方式")
-                            }
+                        if (title.text.isBlank()) {
+                            titleMissing = true
+                            scope.launch { snackbarHostState.showSnackbar("请填写事件标题") }
                             return@TextButton
+                        }
+                        // 一次性事件提醒触发时刻已过（事件时间减去提前量），提醒不会响，先问用户。
+                        // 重复事件的提醒排在未来的 occurrence，锚点在过去属正常，不提示。
+                        val notifyOn = notifyNotification || notifyAlarm
+                        if (notifyOn && repeatType == "none" && displayedTime > 0L) {
+                            val trigger = displayedTime - reminderOffset * 60_000L
+                            if (trigger <= System.currentTimeMillis()) {
+                                pendingSaveAfterExpiredConfirm = true
+                                return@TextButton
+                            }
                         }
                         val ev = buildEvent()
                         if (isEditing) viewModel.updateEvent(ev) else viewModel.insertEvent(ev)
@@ -313,8 +331,12 @@ fun EventDetailScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             OutlinedTextField(
-                value = title, onValueChange = { title = it },
-                label = { Text("事件标题 *") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                value = title, onValueChange = { title = it; if (titleMissing) titleMissing = false },
+                label = { Text("事件标题 *") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                isError = titleMissing,
+                supportingText = {
+                    if (titleMissing) Text("请填写事件标题", color = MaterialTheme.colorScheme.error)
+                }
             )
             OutlinedTextField(
                 value = description, onValueChange = { description = it },
@@ -424,7 +446,13 @@ fun EventDetailScreen(
                                 if (it) originalReminderTime = 0L
                             })
                         }
-                        if (!forceAllDay) {
+                        if (forceAllDay) {
+                            Text(
+                                "全天事件将于当天 09:00 提醒",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
                             val timeStr = if (displayedTime > 0L) {
                                 val c = Calendar.getInstance().apply { timeInMillis = displayedTime }
                                 String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
@@ -786,6 +814,24 @@ fun EventDetailScreen(
                 dismissButton = { TextButton(onClick = { showDeleteEventDialog = false }) { Text("取消") } }
             )
         }
+    }
+
+    // 提醒时刻已过确认（如"提前1天"提醒今天的事件，触发时刻在昨天，不会响）
+    if (pendingSaveAfterExpiredConfirm) {
+        AlertDialog(
+            onDismissRequest = { pendingSaveAfterExpiredConfirm = false },
+            title = { Text("提醒时刻已过") },
+            text = { Text("按当前设置，提醒触发时间已经过去，保存后不会收到提醒。仍要保存吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingSaveAfterExpiredConfirm = false
+                    val ev = buildEvent()
+                    if (isEditing) viewModel.updateEvent(ev) else viewModel.insertEvent(ev)
+                    navController.popBackStack()
+                }) { Text("仍要保存") }
+            },
+            dismissButton = { TextButton(onClick = { pendingSaveAfterExpiredConfirm = false }) { Text("返回修改") } }
+        )
     }
 
     // EVT-10: 周期事件跳过确认

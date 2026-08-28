@@ -112,6 +112,13 @@ class AlarmReceiver : BroadcastReceiver() {
                             } else "全天"
                             val content = "$timeText · $eventDateStr"
 
+                            // 周期事件：先续排下一轮，再判断是否跳过本次。
+                            // 顺序很关键——若放在跳过判断之后，被跳过的触发不会滚动调度窗口，
+                            // 连续跳过多天会让周期提醒静默断流。
+                            if (event.repeatType != "none") {
+                                rescheduleNextOccurrence(context, event, eventDateStr)
+                            }
+
                             // EVT-10: 周期事件例外 —— 触发日期在 skipDates 中则静默跳过
                             if (AlarmReceiver.isOccurrenceSkipped(event, eventDateStr)) {
                                 releaseWakeLock()
@@ -149,11 +156,6 @@ class AlarmReceiver : BroadcastReceiver() {
                             if (wantAlarm && event != null) {
                                 playAlarmSound(context)
                                 vibrate(context)
-                            }
-
-                            // 周期事件：每次触发后顺延预约，保证"永远每天/每周…"
-                            if (event != null && event.repeatType != "none") {
-                                rescheduleNextOccurrence(context, event, eventDateStr)
                             }
                         } catch (_: Exception) {
                         } finally {
