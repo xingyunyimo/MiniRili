@@ -73,7 +73,8 @@ X-WR-TIMEZONE:Asia/Shanghai
             writeXProp(sb, "X-MINIRILI-ATTACHMENTS", event.attachments)
 
             // VALARM（提醒偏移 — offset 存储为分钟，转成秒写 ICS；负号表示事件前）
-            if (event.reminderOffset > 0) {
+            // 全天事件（reminderTime=0 且无偏移）不写；指定时间但偏移为 0 时写 -PT0S（事件开始时提醒）
+            if (event.reminderOffset > 0 || event.reminderTime > 0) {
                 val offsetSec = event.reminderOffset * 60
                 sb.append("BEGIN:VALARM\n")
                 sb.append("TRIGGER:-PT${offsetSec}S\n")
@@ -218,7 +219,8 @@ X-WR-TIMEZONE:Asia/Shanghai
             skipDates = data["X-MINIRILI-SKIPDATES"] ?: "",
             skipReminderDates = data["X-MINIRILI-SKIPREMINDERDATES"] ?: "",
             notifyNotification = data["X-MINIRILI-NOTIFYNOTIFICATION"]?.toBoolean() ?: true,
-            notifyAlarm = data["X-MINIRILI-NOTIFYALARM"]?.toBoolean() ?: true,
+            // 外部标准 ICS 无此字段时默认关闹钟，与新建事件默认一致（闹钟需用户主动开启）
+            notifyAlarm = data["X-MINIRILI-NOTIFYALARM"]?.toBoolean() ?: false,
             createdAt = data["X-MINIRILI-CREATEDAT"]?.toLongOrNull() ?: System.currentTimeMillis(),
             updatedAt = data["X-MINIRILI-UPDATEDAT"]?.toLongOrNull() ?: System.currentTimeMillis(),
             sortOrder = data["X-MINIRILI-SORTORDER"]?.toLongOrNull() ?: 0L,

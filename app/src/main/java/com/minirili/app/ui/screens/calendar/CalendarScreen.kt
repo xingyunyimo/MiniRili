@@ -1335,7 +1335,8 @@ object JsonUtils {
         skipDates = map["skipDates"] ?: "",
         skipReminderDates = map["skipReminderDates"] ?: "",
         notifyNotification = map["notifyNotification"]?.toBoolean() ?: true,
-        notifyAlarm = map["notifyAlarm"]?.toBoolean() ?: true,
+        // 字段缺失时默认关闹钟，与新建事件默认一致（闹钟需用户主动开启）
+        notifyAlarm = map["notifyAlarm"]?.toBoolean() ?: false,
         sortOrder = map["sortOrder"]?.toLongOrNull() ?: 0L,
         attachments = map["attachments"] ?: "",
         createdAt = map["createdAt"]?.toLongOrNull() ?: System.currentTimeMillis(),

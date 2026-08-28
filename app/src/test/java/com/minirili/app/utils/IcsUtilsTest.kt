@@ -67,6 +67,47 @@ class IcsUtilsTest {
     }
 
     @Test
+    fun generateICS_offsetZeroWithReminderTime_emitsZeroTrigger() {
+        // 指定时间 + 偏移"当日"（offset=0）也要写 VALARM，导出到外部日历才有提醒
+        val events = listOf(
+            EventEntity(
+                id = 1,
+                title = "准点提醒",
+                description = "",
+                type = "普通",
+                gregorianDate = "2024-02-15",
+                reminderTime = 946720800000L, // 2000-01-01 10:00 基准
+                reminderOffset = 0
+            )
+        )
+
+        val icsContent = IcsUtils.generateICS(events)
+
+        assertTrue(icsContent.contains("TRIGGER:-PT0S"))
+    }
+
+    @Test
+    fun parseICS_missingNotifyAlarm_defaultsToFalse() {
+        // 外部标准 ICS 无 X-MINIRILI-NOTIFYALARM 时默认关闹钟，与新建事件默认一致
+        val icsContent = """BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//External//Cal//EN
+BEGIN:VEVENT
+UID:ext-1
+DTSTAMP:20240215T120000Z
+DTSTART;VALUE=DATE:20240215
+SUMMARY:外部事件
+END:VEVENT
+END:VCALENDAR"""
+
+        val events = IcsUtils.parseICS(icsContent)
+
+        assertEquals(1, events.size)
+        assertTrue(events[0].notifyNotification)
+        assertFalse(events[0].notifyAlarm)
+    }
+
+    @Test
     fun parseICS_parsesValidICS() {
         val icsContent = """BEGIN:VCALENDAR
 VERSION:2.0
