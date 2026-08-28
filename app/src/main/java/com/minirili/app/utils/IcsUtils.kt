@@ -221,8 +221,9 @@ X-WR-TIMEZONE:Asia/Shanghai
             notifyNotification = data["X-MINIRILI-NOTIFYNOTIFICATION"]?.toBoolean() ?: true,
             // 外部标准 ICS 无此字段时默认关闹钟，与新建事件默认一致（闹钟需用户主动开启）
             notifyAlarm = data["X-MINIRILI-NOTIFYALARM"]?.toBoolean() ?: false,
-            createdAt = data["X-MINIRILI-CREATEDAT"]?.toLongOrNull() ?: System.currentTimeMillis(),
-            updatedAt = data["X-MINIRILI-UPDATEDAT"]?.toLongOrNull() ?: System.currentTimeMillis(),
+            // 缺失时置 0（而非当前时间）：外部文件无新旧概念，导入时不得覆盖本机更新的同键事件
+            createdAt = data["X-MINIRILI-CREATEDAT"]?.toLongOrNull() ?: 0L,
+            updatedAt = data["X-MINIRILI-UPDATEDAT"]?.toLongOrNull() ?: 0L,
             sortOrder = data["X-MINIRILI-SORTORDER"]?.toLongOrNull() ?: 0L,
             attachments = data["X-MINIRILI-ATTACHMENTS"] ?: ""
         )

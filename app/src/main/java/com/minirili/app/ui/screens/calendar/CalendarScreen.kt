@@ -120,14 +120,21 @@ fun CalendarScreen(
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     val content = input.bufferedReader().readText()
                     val mime = context.contentResolver.getType(uri) ?: ""
+                    val onResult: (EventViewModel.ImportResult) -> Unit = { r ->
+                        val msg = when {
+                            r.total == 0 -> "未识别到事件，请检查文件格式"
+                            r.updated > 0 -> "导入完成：新增 ${r.added} 条，更新 ${r.updated} 条，跳过重复 ${r.skipped} 条"
+                            r.skipped > 0 -> "导入完成：新增 ${r.added} 条，跳过重复 ${r.skipped} 条"
+                            else -> "导入完成：新增 ${r.added} 条"
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    }
                     if (mime.contains("json") || uri.toString().lowercase().endsWith(".json")) {
-                        viewModel.importJSON(content)
+                        viewModel.importJSON(content, onResult)
                     } else {
-                        viewModel.importICS(content)
+                        viewModel.importICS(content, onResult)
                     }
                 }
-            }.onSuccess {
-                Toast.makeText(context, "导入完成", Toast.LENGTH_SHORT).show()
             }.onFailure {
                 Toast.makeText(context, "导入失败: ${it.message}", Toast.LENGTH_LONG).show()
             }
@@ -1339,8 +1346,9 @@ object JsonUtils {
         notifyAlarm = map["notifyAlarm"]?.toBoolean() ?: false,
         sortOrder = map["sortOrder"]?.toLongOrNull() ?: 0L,
         attachments = map["attachments"] ?: "",
-        createdAt = map["createdAt"]?.toLongOrNull() ?: System.currentTimeMillis(),
-        updatedAt = map["updatedAt"]?.toLongOrNull() ?: System.currentTimeMillis()
+        // 缺失时置 0（而非当前时间）：外部文件无新旧概念，导入时不得覆盖本机更新的同键事件
+        createdAt = map["createdAt"]?.toLongOrNull() ?: 0L,
+        updatedAt = map["updatedAt"]?.toLongOrNull() ?: 0L
     )
 
     private fun escapeJson(s: String) = s.replace("\\", "\\\\").replace("\"", "\\\"")

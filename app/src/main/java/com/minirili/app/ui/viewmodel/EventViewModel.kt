@@ -120,40 +120,56 @@ class EventViewModel @Inject constructor(
         .flatMapLatest { query -> if (query.isBlank()) flowOf(emptyList()) else repository.searchEvents("%$query%") }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    // ICS 导入（带去重）
-    fun importICS(icsContent: String) {
+    /** 导入结果：新增 / 更新（同键且导入侧更新）/ 跳过重复 / 解析总数 */
+    data class ImportResult(val added: Int, val updated: Int, val skipped: Int, val total: Int)
+
+    // ICS 导入（去重 + 同键按 updatedAt 择优更新）
+    fun importICS(icsContent: String, onResult: (ImportResult) -> Unit = {}) {
         viewModelScope.launch {
-            val incoming = IcsUtils.parseICS(icsContent)
-            val existing = repository.getAllEventsSnapshot()
-            val existingKeys = existing.mapTo(mutableSetOf()) { dupKey(it) }
-            var added = 0
-            incoming.forEach { event ->
-                val key = dupKey(event)
-                if (key !in existingKeys) {
-                    insertEvent(event)
-                    existingKeys.add(key)  // 避免单次导入内批次重复
-                    added++
-                }
-            }
+            onResult(importEvents(IcsUtils.parseICS(icsContent)))
         }
     }
 
-    // JSON 导入（带去重）
-    fun importJSON(jsonContent: String) {
+    // JSON 导入（去重 + 同键按 updatedAt 择优更新）
+    fun importJSON(jsonContent: String, onResult: (ImportResult) -> Unit = {}) {
         viewModelScope.launch {
-            val incoming = JsonUtils.parseJson(jsonContent)
-            val existing = repository.getAllEventsSnapshot()
-            val existingKeys = existing.mapTo(mutableSetOf()) { dupKey(it) }
-            var added = 0
-            incoming.forEach { event ->
-                val key = dupKey(event)
-                if (key !in existingKeys) {
-                    insertEvent(event)
-                    existingKeys.add(key)
+            onResult(importEvents(JsonUtils.parseJson(jsonContent)))
+        }
+    }
+
+    private suspend fun importEvents(incoming: List<EventEntity>): ImportResult {
+        val byKey = repository.getAllEventsSnapshot().associateBy { dupKey(it) }.toMutableMap()
+        var added = 0; var updated = 0; var skipped = 0
+        incoming.forEach { event ->
+            val key = dupKey(event)
+            val match = byKey[key]
+            when {
+                match == null -> {
+                    // 保留备份里的 createdAt；sortOrder 为 0 时用时间戳保证互异（Bug7 排序依赖）
+                    val now = System.currentTimeMillis()
+                    repository.insert(event.copy(
+                        createdAt = if (event.createdAt > 0) event.createdAt else now,
+                        updatedAt = if (event.updatedAt > 0) event.updatedAt else now,
+                        sortOrder = if (event.sortOrder == 0L) now else event.sortOrder
+                    ))
+                    byKey[key] = event  // 同一文件内部重复也只插一条
                     added++
                 }
+                // 同键且导入侧更新：覆盖本机旧版（repository.update 自带提醒重排）
+                // updatedAt 缺失（外部 ICS 无该字段）时为 0，永不覆盖本机数据
+                event.updatedAt > match.updatedAt -> {
+                    repository.update(event.copy(
+                        id = match.id,
+                        createdAt = match.createdAt,
+                        updatedAt = event.updatedAt
+                    ))
+                    byKey[key] = event
+                    updated++
+                }
+                else -> skipped++
             }
         }
+        return ImportResult(added, updated, skipped, incoming.size)
     }
 
     /** 判定两条记录是否为同一事件的键 */
