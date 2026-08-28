@@ -156,6 +156,29 @@ class LunarCalendarTest {
         assertEquals("闰正月", LunarCalendar.getLunarDayLabel(cal(2148, 2, 20))) // 闰月初一→"闰月名"+"月"
     }
 
+    // ===== 回归：农历事件日期选择器把阳历当农历反推导致漂移（1953 案例）=====
+    // 原 bug：编辑农历事件打开日期选择器，输入框预填阳历值、确定时却当农历反推，
+    //       gregorianDate 1953-08-22（农历7月13）被当成农历8月22 → 反推为 1953-09-29。
+    // 此测试锁住阳历↔农历往返的正确性。
+
+    @Test
+    fun solarLunarRoundTrip_1953_july13() {
+        // 阳历 1953-08-22 = 农历 1953-07-13；反推农历7月13应回到 1953-08-22
+        val g = cal(1953, 8, 22)
+        val parts = LunarCalendar.toLunarParts(g)
+        assertEquals(7, parts.month)
+        assertEquals(13, parts.day)
+        assertEquals(false, parts.isLeapMonth)
+        assertEquals("1953-08-22", LunarCalendar.lunarToGregorian(1953, 7, 13))
+    }
+
+    @Test
+    fun solarLunarRoundTrip_1953_aug22_mustNotCollide() {
+        // 关键防退化：农历8月22 ≠ 农历7月13；反推农历8月22应得 1953-09-29，绝不能落回 1953-08-22
+        assertNotEquals("1953-08-22", LunarCalendar.lunarToGregorian(1953, 8, 22))
+        assertEquals("1953-09-29", LunarCalendar.lunarToGregorian(1953, 8, 22))
+    }
+
     private fun cal(y: Int, m1: Int, d: Int) =
         Calendar.getInstance().apply { set(y, m1 - 1, d) }
 }

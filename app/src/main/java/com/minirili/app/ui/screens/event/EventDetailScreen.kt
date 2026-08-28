@@ -817,15 +817,23 @@ private fun DateTimePickerDialog(
     onDismiss: () -> Unit
 ) {
     val init = DateUtils.parseGregorian(initDate)
-    var yearText by remember { mutableStateOf(init.get(Calendar.YEAR).toString()) }
-    var monthText by remember { mutableStateOf((init.get(Calendar.MONTH) + 1).toString()) }
-    var dayText by remember { mutableStateOf(init.get(Calendar.DAY_OF_MONTH).toString()) }
+    // 农历模式下输入框预填 selectedDate 对应的农历年月日，使"标题(农历)与框内值(农历)"自洽；
+    // 确定时再由 lunarToGregorian 反推为阳历。否则阳历值会被当作农历反推，导致日期漂移。
+    val lunarParts = if (useLunar) LunarCalendar.toLunarParts(init) else null
+    // 闰月标记：预填时取自农历（闰月事件保持闰月，否则直接确定会按非闰月反推而漂移）；
+    // 用户改动月号时退出闰月（闰月仅在被闰月号上有意义）。
+    val initialIsLeap = lunarParts?.isLeapMonth ?: false
+    var isLeapMonth by remember { mutableStateOf(initialIsLeap) }
+    var yearText by remember { mutableStateOf((lunarParts?.yearBase ?: init.get(Calendar.YEAR)).toString()) }
+    var monthText by remember { mutableStateOf((lunarParts?.month ?: (init.get(Calendar.MONTH) + 1)).toString()) }
+    var dayText by remember { mutableStateOf((lunarParts?.day ?: init.get(Calendar.DAY_OF_MONTH)).toString()) }
     var hourText by remember { mutableStateOf(String.format("%02d", initHour)) }
     var minuteText by remember { mutableStateOf(String.format("%02d", initMinute)) }
 
     val year = yearText.toIntOrNull() ?: init.get(Calendar.YEAR)
     val month = monthText.toIntOrNull()?.coerceIn(1, 12) ?: (init.get(Calendar.MONTH) + 1)
-    val maxDay = DateUtils.getDaysInMonth(year, month)
+    // 农历日为初一..三十，不能用公历月天数 clamp，否则农历三十在公历2月会被截断
+    val maxDay = if (useLunar) 30 else DateUtils.getDaysInMonth(year, month)
     val day = dayText.toIntOrNull()?.coerceIn(1, maxDay) ?: init.get(Calendar.DAY_OF_MONTH).coerceAtMost(maxDay)
     val hour = hourText.toIntOrNull()?.coerceIn(0, 23) ?: initHour
     val minute = minuteText.toIntOrNull()?.coerceIn(0, 59) ?: initMinute
@@ -852,7 +860,14 @@ private fun DateTimePickerDialog(
                     )
                     Text("年", modifier = Modifier.padding(horizontal = 4.dp))
                     OutlinedTextField(
-                        value = monthText, onValueChange = { if (it.all { c -> c.isDigit() } || it.isEmpty()) monthText = it },
+                        value = monthText,
+                        onValueChange = {
+                            if (it.all { c -> c.isDigit() } || it.isEmpty()) {
+                                monthText = it
+                                // 月号一旦变化即退出闰月（闰月仅对被闰月号有效）
+                                if (it.toIntOrNull() != lunarParts?.month) isLeapMonth = false
+                            }
+                        },
                         modifier = Modifier.width(60.dp), singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         textStyle = MaterialTheme.typography.titleMedium.copy(textAlign = TextAlign.Center)
@@ -890,8 +905,8 @@ private fun DateTimePickerDialog(
         },
         confirmButton = { TextButton(onClick = {
             val dateStr = if (useLunar) {
-                // 用户输入的是农历年月日，转为公历后再存 gregorianDate
-                LunarCalendar.lunarToGregorian(year, month, day)
+                // 用户输入的是农历年月日，转为公历后再存 gregorianDate；闰月标记保持预填值
+                LunarCalendar.lunarToGregorian(year, month, day, isLeapMonth)
                     ?: String.format("%04d-%02d-%02d", year, month, day) // 转换失败回退
             } else {
                 String.format("%04d-%02d-%02d", year, month, day)
