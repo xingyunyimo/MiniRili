@@ -72,17 +72,65 @@ class HolidayServiceTest {
     @Test
     fun loadHolidays_2026_returnsCorrectHolidays() {
         val holidays = HolidayService.loadHolidays(2026)
-        assertEquals(28, holidays.size)
+        assertEquals(39, holidays.size)
 
         val jan01 = holidays.find { it.date == "2026-01-01" }
         assertNotNull(jan01)
         assertEquals("元旦", jan01?.name)
         assertEquals(HolidayType.PUBLIC, jan01?.type)
 
+        val jan04 = holidays.find { it.date == "2026-01-04" }
+        assertNotNull(jan04)
+        assertEquals("元旦", jan04?.name)
+        assertEquals(HolidayType.TRANSFER, jan04?.type) // 元旦调休补班
+
+        val feb15 = holidays.find { it.date == "2026-02-15" }
+        assertNotNull(feb15)
+        assertEquals("春节", feb15?.name)
+        assertEquals(HolidayType.PUBLIC, feb15?.type) // 春节起点（9天）
+
         val feb17 = holidays.find { it.date == "2026-02-17" }
         assertNotNull(feb17)
         assertEquals("春节", feb17?.name)
         assertEquals(HolidayType.PUBLIC, feb17?.type)
+
+        val feb23 = holidays.find { it.date == "2026-02-23" }
+        assertNotNull(feb23)
+        assertEquals("春节", feb23?.name)
+        assertEquals(HolidayType.PUBLIC, feb23?.type) // 春节终点
+
+        val feb14 = holidays.find { it.date == "2026-02-14" }
+        assertNotNull(feb14)
+        assertEquals(HolidayType.TRANSFER, feb14?.type) // 春节补班
+
+        val feb28 = holidays.find { it.date == "2026-02-28" }
+        assertNotNull(feb28)
+        assertEquals(HolidayType.TRANSFER, feb28?.type) // 春节补班
+
+        val may09 = holidays.find { it.date == "2026-05-09" }
+        assertNotNull(may09)
+        assertEquals(HolidayType.TRANSFER, may09?.type) // 劳动节补班
+
+        val sep25 = holidays.find { it.date == "2026-09-25" }
+        assertNotNull(sep25)
+        assertEquals("中秋节", sep25?.name)
+        assertEquals(HolidayType.PUBLIC, sep25?.type) // 修正中秋漂移（旧数据为9/27）
+
+        val sep20 = holidays.find { it.date == "2026-09-20" }
+        assertNotNull(sep20)
+        assertEquals(HolidayType.TRANSFER, sep20?.type) // 国庆调休补班
+
+        val oct07 = holidays.find { it.date == "2026-10-07" }
+        assertNotNull(oct07)
+        assertEquals(HolidayType.PUBLIC, oct07?.type) // 国庆终点（7天）
+
+        val oct10 = holidays.find { it.date == "2026-10-10" }
+        assertNotNull(oct10)
+        assertEquals(HolidayType.TRANSFER, oct10?.type) // 国庆补班
+
+        // 旧错误中秋日期不应残留（旧数据曾把中秋放在 9/27-9/29）
+        assertNull(holidays.find { it.date == "2026-09-28" })
+        assertNull(holidays.find { it.date == "2026-09-29" })
     }
 
     @Test
@@ -204,6 +252,9 @@ class HolidayServiceTest {
   {"date": "2026-01-01", "name": "元旦", "type": "PUBLIC"},
   {"date": "2026-01-02", "name": "元旦", "type": "PUBLIC"},
   {"date": "2026-01-03", "name": "元旦", "type": "PUBLIC"},
+  {"date": "2026-01-04", "name": "元旦", "type": "TRANSFER"},
+  {"date": "2026-02-14", "name": "春节", "type": "TRANSFER"},
+  {"date": "2026-02-15", "name": "春节", "type": "PUBLIC"},
   {"date": "2026-02-16", "name": "春节", "type": "PUBLIC"},
   {"date": "2026-02-17", "name": "春节", "type": "PUBLIC"},
   {"date": "2026-02-18", "name": "春节", "type": "PUBLIC"},
@@ -211,6 +262,8 @@ class HolidayServiceTest {
   {"date": "2026-02-20", "name": "春节", "type": "PUBLIC"},
   {"date": "2026-02-21", "name": "春节", "type": "PUBLIC"},
   {"date": "2026-02-22", "name": "春节", "type": "PUBLIC"},
+  {"date": "2026-02-23", "name": "春节", "type": "PUBLIC"},
+  {"date": "2026-02-28", "name": "春节", "type": "TRANSFER"},
   {"date": "2026-04-04", "name": "清明节", "type": "PUBLIC"},
   {"date": "2026-04-05", "name": "清明节", "type": "PUBLIC"},
   {"date": "2026-04-06", "name": "清明节", "type": "PUBLIC"},
@@ -219,16 +272,22 @@ class HolidayServiceTest {
   {"date": "2026-05-03", "name": "劳动节", "type": "PUBLIC"},
   {"date": "2026-05-04", "name": "劳动节", "type": "PUBLIC"},
   {"date": "2026-05-05", "name": "劳动节", "type": "PUBLIC"},
+  {"date": "2026-05-09", "name": "劳动节", "type": "TRANSFER"},
   {"date": "2026-06-19", "name": "端午节", "type": "PUBLIC"},
   {"date": "2026-06-20", "name": "端午节", "type": "PUBLIC"},
   {"date": "2026-06-21", "name": "端午节", "type": "PUBLIC"},
+  {"date": "2026-09-20", "name": "国庆节", "type": "TRANSFER"},
+  {"date": "2026-09-25", "name": "中秋节", "type": "PUBLIC"},
+  {"date": "2026-09-26", "name": "中秋节", "type": "PUBLIC"},
   {"date": "2026-09-27", "name": "中秋节", "type": "PUBLIC"},
-  {"date": "2026-09-28", "name": "中秋节", "type": "PUBLIC"},
-  {"date": "2026-09-29", "name": "中秋节", "type": "PUBLIC"},
   {"date": "2026-10-01", "name": "国庆节", "type": "PUBLIC"},
   {"date": "2026-10-02", "name": "国庆节", "type": "PUBLIC"},
   {"date": "2026-10-03", "name": "国庆节", "type": "PUBLIC"},
-  {"date": "2026-10-04", "name": "国庆节", "type": "PUBLIC"}
+  {"date": "2026-10-04", "name": "国庆节", "type": "PUBLIC"},
+  {"date": "2026-10-05", "name": "国庆节", "type": "PUBLIC"},
+  {"date": "2026-10-06", "name": "国庆节", "type": "PUBLIC"},
+  {"date": "2026-10-07", "name": "国庆节", "type": "PUBLIC"},
+  {"date": "2026-10-10", "name": "国庆节", "type": "TRANSFER"}
 ]
         """.trimIndent()
     }
