@@ -152,6 +152,8 @@ class HolidayServiceTest {
         assertEquals("元旦", HolidayService.getHolidayName("2024-01-01"))
         assertEquals("春节", HolidayService.getHolidayName("2024-02-10"))
         assertEquals("国庆节", HolidayService.getHolidayName("2024-10-01"))
+        assertEquals("补班", HolidayService.getHolidayName("2024-02-24")) // 元宵 TRANSFER → 显示"补班"
+        assertEquals("补班", HolidayService.getHolidayName("2026-09-20")) // 国庆调休补班 → 显示"补班"
         assertNull(HolidayService.getHolidayName("2024-01-02"))
     }
 

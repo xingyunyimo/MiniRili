@@ -114,9 +114,11 @@ object HolidayService {
 
     /**
      * 获取指定日期的节假日名称
+     * 调休补班日（TRANSFER）统一显示为"补班"，避免周日格上出现"国庆节"等节日名被误读为放假。
      */
     fun getHolidayName(date: String): String? {
-        return isHoliday(date)?.name
+        val h = isHoliday(date) ?: return null
+        return if (h.type == HolidayType.TRANSFER) "补班" else h.name
     }
 
     /**
